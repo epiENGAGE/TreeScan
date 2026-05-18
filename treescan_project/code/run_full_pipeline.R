@@ -1,7 +1,7 @@
 # Full script that runs all the sub-scripts
 
 # You need to setwd when in the "treescan_project" folder. eg:
-setwd("~/TreeScan-implementation/treescan_project")
+setwd("~/TreeScan/treescan_project")
 
 # We need to set where you store the folder in a treescan-friendly way
 parent_dir <- normalizePath(getwd(), mustWork = TRUE)
