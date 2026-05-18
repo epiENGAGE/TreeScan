@@ -132,7 +132,11 @@ update_prm_file <- function(
 }
 
 # Also need to create the results file to save in
-dir.create(paste0(parent_dir, "/results/", final_date), recursive = TRUE, showWarnings = FALSE)
+if (isTRUE(subregion)){
+  dir.create(paste0(parent_dir, "/results_subregion/", final_date), recursive = TRUE, showWarnings = FALSE)
+} else {
+  dir.create(paste0(parent_dir, "/results/", final_date), recursive = TRUE, showWarnings = FALSE)
+}
 
 for (LAG in initial_lags) {
   update_prm_file(lag = LAG)
