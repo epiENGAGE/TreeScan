@@ -20,6 +20,10 @@ safe_dev_off <- function(dev_id) {
   }
 }
 
+if (isTRUE(subregion)){
+  dir.create(paste0(parent_dir, "/signal_report_subregion"))
+}
+
 if (length(unique(valid_nodes)) > 0) {
   
   # Loop over lags
@@ -82,7 +86,12 @@ if (length(unique(valid_nodes)) > 0) {
     lookback_dates <- seq(as.Date(Sys.Date()) - 7, as.Date(Sys.Date()) - 1, by = "day")
     lookback_str <- format(lookback_dates, "%Y-%m-%d")
     
-    results_dir <- file.path(parent_dir, "results")
+    if (isTRUE(subregion)){
+      results_dir <- file.path(parent_dir, "results_subregion")
+    } else {
+      results_dir <- file.path(parent_dir, "results")
+    }
+    
     date_dirs <- file.path(results_dir, lookback_dates)
     
     old_reports <- unlist(
@@ -639,7 +648,12 @@ if (length(unique(valid_nodes)) > 0) {
   # -----------------------------
   # 8) Save
   # -----------------------------
-  out_file <- file.path(parent_dir, "signal_report", paste0("Signals_Report_", final_date, ".xlsx"))
+  if (isTRUE(subregion)){
+    out_file <- file.path(parent_dir, "signal_report_subregion", paste0("Signals_Report_", final_date, ".xlsx"))
+  } else {
+    out_file <- file.path(parent_dir, "signal_report", paste0("Signals_Report_", final_date, ".xlsx"))
+  }
+  
   saveWorkbook(wb, out_file, overwrite = TRUE)
   
   message("Workbook saved to: ", out_file)
