@@ -28,7 +28,9 @@ which_subregion <- c("TX_Travis")
 
 # How many processors do you want to use?
 # select number below; 0 means use all available (which was the previous default)
-number_processors <- 2
+# Let's set as a default half of your available processors
+install.packages("parallel")
+number_processors <- parallel::detectCores() / 2
 
 # Are you going to set this for batch or be more hands on?
 # There are two options for lag selection for this pipeline
