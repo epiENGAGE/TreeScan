@@ -71,8 +71,13 @@ for (lag in initial_lags){
   
   # Get required nodes
   
-  # Read in Results csv file (edit to match naming convention)
-  TS_Results_today <- read.csv(paste0(parent_dir, "/results/", final_date, "/Results_lag", lag, "_", final_date, ".csv"))
+  if (!isTRUE(subregion)){
+    # Read in Results csv file (edit to match naming convention)
+    TS_Results_today <- read.csv(paste0(parent_dir, "/results/", final_date, "/Results_lag", lag, "_", final_date, ".csv"))
+  } else {
+    TS_Results_today <- read.csv(paste0(parent_dir, "/results_subregion/", final_date, "/Results_lag", lag, "_", final_date, ".csv"))
+  }
+    
   # Signal criteria
   TS_Results_today <- TS_Results_today[is.na(TS_Results_today$Recurrence.Interval) == F, ]
   TS_Results_today <- TS_Results_today[which(TS_Results_today$Relative.Risk>=1.3),]
@@ -1394,16 +1399,30 @@ for(i in 1:length(valid_nodes))
       writeData(wb, "Demographics", data.frame(Message = "No demographic comparison data available"))
     }
     
-    # Save workbook
-    saveWorkbook(
-      wb,
-      paste0(
-        parent_dir, "/signal_interpretation/", END_DATE, "_",
-        gsub("\\|", "_", gsub("2\\-", "", node_codes)),
-        ".xlsx"
-      ),
-      overwrite = TRUE
-    )
+    if (!isTRUE(subregion)){
+      # Save workbook
+      saveWorkbook(
+        wb,
+        paste0(
+          parent_dir, "/signal_interpretation/", END_DATE, "_",
+          gsub("\\|", "_", gsub("2\\-", "", node_codes)),
+          ".xlsx"
+        ),
+        overwrite = TRUE
+      )
+    } else {
+      dir.create(paste0(parent_dir, "/signal_interpretation_subregion/"))
+      # Save workbook
+      saveWorkbook(
+        wb,
+        paste0(
+          parent_dir, "/signal_interpretation_subregion/", END_DATE, "_",
+          gsub("\\|", "_", gsub("2\\-", "", node_codes)),
+          ".xlsx"
+        ),
+        overwrite = TRUE
+      )
+    }
   }  
   
   # If baseline is empty
