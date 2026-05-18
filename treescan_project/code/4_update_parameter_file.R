@@ -84,16 +84,29 @@ update_prm_file <- function(
     )
   )
   
-  lines <- replace_path_value(
-    lines,
-    "results-filename",
-    to_prm_path(
-      parent_dir,
-      "results",
-      as.character(todays_date),
-      paste0("Results_lag", lag, "_", todays_date, ".txt")
+  if (!isTRUE(subregion)){
+    lines <- replace_path_value(
+      lines,
+      "results-filename",
+      to_prm_path(
+        parent_dir,
+        "results",
+        as.character(todays_date),
+        paste0("Results_lag", lag, "_", todays_date, ".txt")
+      )
     )
-  )
+  } else {
+    lines <- replace_path_value(
+      lines,
+      "results-filename",
+      to_prm_path(
+        parent_dir,
+        "results_subregion",
+        as.character(todays_date),
+        paste0("Results_lag", lag, "_", todays_date, ".txt")
+      )
+    )
+  }
   
   lines <- replace_path_value(
     lines,
