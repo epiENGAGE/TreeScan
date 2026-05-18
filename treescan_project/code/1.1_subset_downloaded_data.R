@@ -1,4 +1,4 @@
-if (isTRUE(subset)){
+if (isTRUE(subregion)){
   dir.create(paste0(parent_dir, "/raw_data_subset"))
   
   subset_end_date <- as.Date(final_date)
