@@ -78,7 +78,7 @@ write_daily_files <- function(df, out_dir, date_col = "C_Visit_Date_Time") {
   out_files <- character(0)
   
   for (d in names(split_df)) {
-    daily_df <- split_df[[d]] %>% select(-file_date)
+    daily_df <- split_df[[d]] %>% dplyr::select(-file_date)
     out_file <- file.path(out_dir, sprintf("NSSP_data_%s_to_%s.csv", d, d))
     readr::write_csv(daily_df, out_file)
     out_files <- c(out_files, out_file)
