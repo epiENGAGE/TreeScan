@@ -49,7 +49,7 @@ if (length(unique(valid_nodes)) > 0) {
     TS_Results_today <- TS_Results_today[which((TS_Results_today$Recurrence.Interval >= 365)|(grepl("1\\-",TS_Results_today$Node.Identifier) & TS_Results_today$Recurrence.Interval>=100)),]
     TS_Results_today$Node.Identifier=stri_replace_all_fixed(TS_Results_today$Node.Identifier, "\xa0", "")
     
-    Nodes <- unique(append(Nodes, sub(".*-", "", TS_Results_today[,2])))
+    Nodes <- sub(".*-", "", TS_Results_today[,2])
     print(Nodes)
     
     # Check if any signals are dummy nodes. If yes, add linked nodes to identifier, separated by "|".
@@ -105,22 +105,18 @@ if (length(unique(valid_nodes)) > 0) {
     lookback_str <- format(lookback_dates, "%Y-%m-%d")
     
     if (isTRUE(subregion)){
-      results_dir <- file.path(parent_dir, "results_subregion")
+      results_dir <- file.path(parent_dir, "signal_report_subregion")
     } else {
-      results_dir <- file.path(parent_dir, "results")
+      results_dir <- file.path(parent_dir, "signal_report")
     }
     
-    date_dirs <- file.path(results_dir, lookback_dates)
+    date_pattern <- paste(lookback_dates, collapse = "|")
     
-    old_reports <- unlist(
-      lapply(date_dirs, function(dir) {
-        list.files(
-          path = dir,
-          pattern = "^Results_lag1_[0-9]{4}-[0-9]{2}-[0-9]{2}\\.csv$",
-          full.names = TRUE,
-          ignore.case = TRUE
-        )
-      })
+    old_reports <- list.files(
+      path = results_dir,
+      pattern = paste0("^Signals_Report_(", date_pattern, ")\\.xlsx$"),
+      full.names = TRUE,
+      ignore.case = TRUE
     )
     
     old_reports <- old_reports[file.exists(old_reports)]
@@ -130,13 +126,22 @@ if (length(unique(valid_nodes)) > 0) {
     # 3) Merge prior days safely
     # -----------------------------
     for (file in old_reports) {
-      temp <- tryCatch(read.csv(file, stringsAsFactors = FALSE), error = function(e) NULL)
-      if (is.null(temp) || nrow(temp) == 0) next
+      temp <- tryCatch(
+        as.data.frame(readxl::read_excel(file)),
+        error = function(e) NULL
+      )
+      
+      if (is.null(temp) || nrow(temp) == 0) {
+        stop("File could not be read or has no rows")
+      }
       
       temp <- temp[!is.na(temp$Recurrence.Interval), , drop = FALSE]
-      if (nrow(temp) == 0) next
       
-      temp$Node.Identifier <- stri_replace_all_fixed(as.character(temp$Node.Identifier), "\xa0", "")
+      temp$Node.Identifier <- stringi::stri_replace_all_fixed(
+        as.character(temp$Node.Identifier),
+        "\xa0",
+        ""
+      )
       temp$Node.Identifier <- trimws(temp$Node.Identifier)
       
       if ("Node.Name" %in% names(temp)) {
@@ -145,13 +150,10 @@ if (length(unique(valid_nodes)) > 0) {
         temp$Node.Identifier <- trimws(temp$Node.Identifier)
       }
       
-      temp <- temp[temp$Node.Identifier %in% TS_Results_today$Node.Identifier, , drop = FALSE]
-      if (nrow(temp) == 0) next
+      # temp <- temp[temp$Node.Identifier %in% TS_Results_today$Node.Identifier, , drop = FALSE]
       
       keep_cols <- c("Node.Identifier", "Time.Window.End", "Recurrence.Interval", "Relative.Risk")
       temp <- temp[, keep_cols[keep_cols %in% names(temp)], drop = FALSE]
-      
-      if (!all(c("Node.Identifier", "Time.Window.End", "Recurrence.Interval", "Relative.Risk") %in% names(temp))) next
       
       file_dt <- sub(".*?(\\d{4}-\\d{2}-\\d{2}).*", "\\1", file)
       
