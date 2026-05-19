@@ -283,17 +283,30 @@ if (length(valid_nodes) > 0) {
   print("You have no signals")
 }
 
-# Create a regex pattern for exact matches between semicolons
-pattern <- paste0(";", paste(Nodes, collapse = ";|;"), ";")
-
-# Make sure we don't have any incorrect nodes
-#for (j in list.files(out_dir2, pattern = "\\.csv$", full.names = TRUE)) {
-#  print(j)
-#  A <- read.csv(j)
-#  
-#  # Filter rows with at least one exact match
-#  filtered_df <- A %>%
-#    filter(str_detect(DischargeDiagnosis, pattern))
-#  
-#  write.csv(filtered_df, j, row.names = FALSE)
-#}
+if (isTRUE(subregion)){
+  # For time trend table pull in current year and additional 3 prior years
+  yr_list <- (as.numeric(format(final_date,"%Y"))-3) : as.numeric(format(final_date,"%Y"))
+  
+  # Bit of tidying up before importing data
+  files_all <- list.files(paste0(parent_dir, "/data_for_interpretation"),
+                          pattern = ".csv$",
+                          full.names = TRUE
+  )
+  
+  # Keep only files for the years we actually need
+  files <- files_all[
+    grepl(
+      paste0("(", paste(yr_list, collapse = "|"), ")"),
+      basename(files_all)
+    )
+  ]
+  
+  files <- sort(files)
+  
+  for (i in 1:length(files)){
+    print(i)
+    A <- read.csv(files[i])
+    B <- A[which(A$Region %in% which_subregion), ]
+    write.csv(B, files[i], row.names = FALSE)
+  }
+}
