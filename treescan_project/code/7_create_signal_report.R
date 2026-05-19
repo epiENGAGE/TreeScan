@@ -34,6 +34,24 @@ if (length(unique(valid_nodes)) > 0) {
     common_cause <- read.csv(paste0(parent_dir, "/data/common cause file final.csv"))
     common_cause <- common_cause[is.na(common_cause$X4) == FALSE, ]
     
+    # Get required nodes
+    if (!isTRUE(subregion)){
+      # Read in Results csv file (edit to match naming convention)
+      TS_Results_today <- read.csv(paste0(parent_dir, "/results/", final_date, "/Results_lag", lag, "_", final_date, ".csv"))
+    } else {
+      TS_Results_today <- read.csv(paste0(parent_dir, "/results_subregion/", final_date, "/Results_lag", lag, "_", final_date, ".csv"))
+    }
+    
+    # Signal criteria
+    TS_Results_today <- TS_Results_today[is.na(TS_Results_today$Recurrence.Interval) == F, ]
+    TS_Results_today <- TS_Results_today[which(TS_Results_today$Relative.Risk>=1.3),]
+    # Admit signals have a lower threshold
+    TS_Results_today <- TS_Results_today[which((TS_Results_today$Recurrence.Interval >= 365)|(grepl("1\\-",TS_Results_today$Node.Identifier) & TS_Results_today$Recurrence.Interval>=100)),]
+    TS_Results_today$Node.Identifier=stri_replace_all_fixed(TS_Results_today$Node.Identifier, "\xa0", "")
+    
+    Nodes <- unique(append(Nodes, sub(".*-", "", TS_Results_today[,2])))
+    print(Nodes)
+    
     # Check if any signals are dummy nodes. If yes, add linked nodes to identifier, separated by "|".
     common_cause_codes <- TS_Results_today$Node.Identifier[
       grepl(
@@ -83,7 +101,7 @@ if (length(unique(valid_nodes)) > 0) {
     # -----------------------------
     # 2) Only pull prior 7 days
     # -----------------------------
-    lookback_dates <- seq(as.Date(Sys.Date()) - 7, as.Date(Sys.Date()) - 1, by = "day")
+    lookback_dates <- seq(as.Date(final_date) - 7, as.Date(final_date) - 1, by = "day")
     lookback_str <- format(lookback_dates, "%Y-%m-%d")
     
     if (isTRUE(subregion)){
@@ -98,7 +116,7 @@ if (length(unique(valid_nodes)) > 0) {
       lapply(date_dirs, function(dir) {
         list.files(
           path = dir,
-          pattern = "\\.csv$",
+          pattern = "^Results_lag1_[0-9]{4}-[0-9]{2}-[0-9]{2}\\.csv$",
           full.names = TRUE,
           ignore.case = TRUE
         )
@@ -294,22 +312,20 @@ if (length(unique(valid_nodes)) > 0) {
   })
   
   # For each Node.Identifier, keep the row from the smallest lag
-  base_rows <- all_data %>%
-    group_by(Node.Identifier) %>%
-    arrange(lag, .by_group = TRUE) %>%
-    slice(1) %>%
-    ungroup()
-  
-  # Build YES/NO presence columns for each lag
-  presence_wide <- all_data %>%
+  lag_presence <- all_data %>%
     distinct(Node.Identifier, lag) %>%
-    mutate(present = "YES") %>%
+    mutate(
+      present = "Yes",
+      lag_col = paste0("LAG ", lag)
+    ) %>%
     pivot_wider(
-      names_from = lag,
+      id_cols = c(Node.Identifier),
+      names_from = lag_col,
       values_from = present,
-      names_prefix = "LAG ",
-      values_fill = "NO"
+      values_fill = "No"
     )
+  
+  presence_wide <- lag_presence
   
   positive_threshold <- 0.10
   negative_threshold <- -0.10
@@ -327,7 +343,7 @@ if (length(unique(valid_nodes)) > 0) {
     ) %>%
     left_join(
       artifact_scores %>%
-        select(code, artifact_score),
+        dplyr::select(code, artifact_score),
       by = "code"
     ) %>%
     mutate(
@@ -342,7 +358,7 @@ if (length(unique(valid_nodes)) > 0) {
         "NO"
       )
     ) %>%
-    select(
+   dplyr::select(
       Node.Identifier,
       artifact_score,
       `Data artifact warning`,
@@ -364,10 +380,10 @@ if (length(unique(valid_nodes)) > 0) {
   addWorksheet(wb, "Signals")
   
   TS_Results_today <- TS_Results_today %>%
-    select(-`Data artifact warning`)
+    dplyr::select(-`Data artifact warning`)
   
   TS_Results_today <- TS_Results_today %>%
-    select(-`Masked in lag 1 warning`)
+    dplyr::select(-`Masked in lag 1 warning`)
   
   writeDataTable(wb, sheet = "Signals", x = TS_Results_today, tableStyle = "TableStyleMedium2")
   freezePane(wb, sheet = "Signals", firstRow = TRUE, firstCol = TRUE)
