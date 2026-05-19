@@ -121,7 +121,7 @@ write_yearly <- function(df, out_dir2) {
   
   for (y in names(split_df)) {
     readr::write_csv(
-      split_df[[y]] %>% select(-file_year),
+      split_df[[y]] %>% dplyr::select(-file_year),
       file.path(out_dir2, paste0("NSSP_", y, ".csv"))
     )
   }
@@ -153,7 +153,7 @@ write_yearly <- function(df, out_dir2) {
   
   for (y in names(split_df)) {
     readr::write_csv(
-      split_df[[y]] %>% select(-file_year),
+      split_df[[y]] %>% dplyr::select(-file_year),
       file.path(out_dir2, paste0("NSSP_", y, ".csv"))
     )
   }
