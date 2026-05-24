@@ -3,7 +3,10 @@ update_prm_file <- function(
     template_lag = 0,
     days_back = 90,
     todays_date = final_date,
-    end_date = final_date - lag
+    end_date = final_date - lag,
+    parent_dir = parent_dir,
+    subregion = subregion,
+    number_processors = number_processors
 ) {
   end_date <- as.Date(end_date)
   start_date <- end_date - days_back
