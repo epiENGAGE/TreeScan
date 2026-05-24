@@ -1,4 +1,4 @@
-# TreeScan
+# TreeScan World Cup 2026 Preparation
 
 [![R tests and coverage](https://github.com/epiENGAGE/TreeScan/actions/workflows/r-tests.yml/badge.svg)](https://github.com/epiENGAGE/TreeScan/actions/workflows/r-tests.yml)
 [![coverage](./tests/badges/coverage-total.svg)](https://github.com/epiENGAGE/TreeScan/actions/workflows/r-tests.yml)
