@@ -17,6 +17,8 @@ Rscript coverage.R
 ```
 
 This writes `coverage/coverage-summary.json` for the GitHub coverage badge.
+On pushes to the default branch, GitHub Actions commits generated badge SVGs
+under `tests/badges/`.
 For a local HTML drill-down report, install `DT` and `htmltools`, then run:
 
 ```sh
@@ -36,10 +38,9 @@ COVERAGE_THRESHOLD=80 Rscript coverage.R
 
 GitHub Actions runs tests and reports coverage on every push and pull request.
 The coverage script discovers every R script in `treescan_project/code/`.
-Until the synthetic fixtures are complete, it runs in bootstrap mode against
-the currently fixture-backed source file. In bootstrap mode, the percentage is
-coverage for that measured subset, not the full `treescan_project/code/`
-directory.
+Until the synthetic fixtures are complete, it runs tests against the currently
+fixture-backed source file, but reports the percentage against the whole code
+directory. Untested code files count as uncovered.
 
 Keep synthetic fixtures under `tests/test_data`. After those fixtures can
 exercise the full script set, enable strict all-script coverage with either:
