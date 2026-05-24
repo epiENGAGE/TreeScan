@@ -16,8 +16,15 @@ cd tests
 Rscript coverage.R
 ```
 
-This also writes an HTML drill-down report to `coverage-report/index.html`.
-It also writes `coverage/coverage-summary.json` for the GitHub coverage badge.
+This writes `coverage/coverage-summary.json` for the GitHub coverage badge.
+For a local HTML drill-down report, install `DT` and `htmltools`, then run:
+
+```sh
+cd tests
+TREESCAN_COVERAGE_HTML=true Rscript coverage.R
+```
+
+The HTML report is generated at `coverage-report/index.html`.
 
 By default, coverage is reported without enforcing a minimum. To fail when
 coverage is below a threshold, set `COVERAGE_THRESHOLD`:

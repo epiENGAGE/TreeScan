@@ -86,12 +86,29 @@ writeLines(
   file.path(coverage_dir, "coverage-summary.json")
 )
 
-dir.create(file.path(project_root, "coverage-report"), showWarnings = FALSE)
-covr::report(
-  coverage,
-  file = file.path(project_root, "coverage-report", "index.html"),
-  browse = FALSE
-)
+write_html_report <- identical(Sys.getenv("TREESCAN_COVERAGE_HTML"), "true")
+
+if (write_html_report) {
+  missing_report_packages <- c("DT", "htmltools")[
+    !vapply(c("DT", "htmltools"), requireNamespace, logical(1), quietly = TRUE)
+  ]
+
+  if (length(missing_report_packages) > 0) {
+    stop(
+      "HTML coverage reports require these extra packages: ",
+      paste(missing_report_packages, collapse = ", "),
+      ". Install them or run without TREESCAN_COVERAGE_HTML=true.",
+      call. = FALSE
+    )
+  }
+
+  dir.create(file.path(project_root, "coverage-report"), showWarnings = FALSE)
+  covr::report(
+    coverage,
+    file = file.path(project_root, "coverage-report", "index.html"),
+    browse = FALSE
+  )
+}
 
 threshold <- as.numeric(Sys.getenv("COVERAGE_THRESHOLD", "0"))
 
