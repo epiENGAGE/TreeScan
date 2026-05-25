@@ -1,6 +1,23 @@
 # Which lags do we want to get a count file for?
 # This defaults to do it for lags of 1:5 days
 
+create_count_files <- function(
+    parent_dir = NULL,
+    final_date = NULL,
+    initial_lags = NULL,
+    random_seed = NULL
+) {
+  if (is.null(parent_dir)) parent_dir <- get("parent_dir", envir = parent.frame())
+  if (is.null(final_date)) final_date <- get("final_date", envir = parent.frame())
+  if (is.null(initial_lags)) initial_lags <- get("initial_lags", envir = parent.frame())
+
+  if (!is.null(random_seed)) {
+    set.seed(random_seed)
+  }
+
+  old_wd <- getwd()
+  on.exit(setwd(old_wd), add = TRUE)
+
 for (LAG in initial_lags){
   print(paste0("Creating count file for lag ", LAG))
   
@@ -599,4 +616,9 @@ for (LAG in initial_lags){
     quote = FALSE,
     fileEncoding = "ASCII"
   )
+}
+}
+
+if (exists("initial_lags", inherits = TRUE)) {
+  create_count_files()
 }

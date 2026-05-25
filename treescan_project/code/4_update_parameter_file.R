@@ -6,7 +6,15 @@ update_prm_file <- function(
     end_date = final_date - lag,
     parent_dir = parent_dir,
     subregion = subregion,
-    number_processors = number_processors
+    number_processors = number_processors,
+    prm_template = NULL,
+    prm_out = NULL,
+    tree_filename = NULL,
+    count_filename = NULL,
+    results_filename = NULL,
+    not_evaluated_nodes_file = NULL,
+    monte_carlo_replications = NULL,
+    randomization_seed = NULL
 ) {
   end_date <- as.Date(end_date)
   start_date <- end_date - days_back
@@ -23,9 +31,15 @@ update_prm_file <- function(
     path
   }
   
-  prm_out <- paste0(parent_dir, "/params/Parameter_File_lag", lag, ".prm")
+  if (is.null(prm_out)) {
+    prm_out <- paste0(parent_dir, "/params/Parameter_File_lag", lag, ".prm")
+  }
   prm_in_existing <- prm_out
-  prm_in_template <- paste0(parent_dir, "/params/Parameter_File_lag", template_lag, ".prm")
+  prm_in_template <- if (is.null(prm_template)) {
+    paste0(parent_dir, "/params/Parameter_File_lag", template_lag, ".prm")
+  } else {
+    prm_template
+  }
   
   # Use existing lag file if present; otherwise fall back to lag0 template
   prm_in <- if (file.exists(prm_in_existing)) prm_in_existing else prm_in_template
@@ -72,49 +86,69 @@ update_prm_file <- function(
   lines <- replace_path_value(
     lines,
     "tree-filename",
-    to_prm_path(parent_dir, "data", "Tree_File_2026.csv")
+    if (is.null(tree_filename)) {
+      to_prm_path(parent_dir, "data", "Tree_File_2026.csv")
+    } else {
+      gsub("\\\\", "/", tree_filename)
+    }
   )
   
   lines <- replace_path_value(
     lines,
     "count-filename",
-    to_prm_path(
-      parent_dir,
-      "data",
-      "analysis_count_files",
-      paste0("Analysis_Count_File_", todays_date),
-      paste0("lag", lag, ".txt")
-    )
+    if (is.null(count_filename)) {
+      to_prm_path(
+        parent_dir,
+        "data",
+        "analysis_count_files",
+        paste0("Analysis_Count_File_", todays_date),
+        paste0("lag", lag, ".txt")
+      )
+    } else {
+      gsub("\\\\", "/", count_filename)
+    }
   )
   
   if (!isTRUE(subregion)){
     lines <- replace_path_value(
       lines,
       "results-filename",
-      to_prm_path(
-        parent_dir,
-        "results",
-        as.character(todays_date),
-        paste0("Results_lag", lag, "_", todays_date, ".txt")
-      )
+      if (is.null(results_filename)) {
+        to_prm_path(
+          parent_dir,
+          "results",
+          as.character(todays_date),
+          paste0("Results_lag", lag, "_", todays_date, ".txt")
+        )
+      } else {
+        gsub("\\\\", "/", results_filename)
+      }
     )
   } else {
     lines <- replace_path_value(
       lines,
       "results-filename",
-      to_prm_path(
-        parent_dir,
-        "results_subregion",
-        as.character(todays_date),
-        paste0("Results_lag", lag, "_", todays_date, ".txt")
-      )
+      if (is.null(results_filename)) {
+        to_prm_path(
+          parent_dir,
+          "results_subregion",
+          as.character(todays_date),
+          paste0("Results_lag", lag, "_", todays_date, ".txt")
+        )
+      } else {
+        gsub("\\\\", "/", results_filename)
+      }
     )
   }
   
   lines <- replace_path_value(
     lines,
     "not-evaluated-nodes-file",
-    to_prm_path(parent_dir, "data", "Do_not_evaluate_nodes.csv")
+    if (is.null(not_evaluated_nodes_file)) {
+      to_prm_path(parent_dir, "data", "Do_not_evaluate_nodes.csv")
+    } else {
+      gsub("\\\\", "/", not_evaluated_nodes_file)
+    }
   )
   
   # Update number of processors
@@ -123,6 +157,22 @@ update_prm_file <- function(
     paste0("parallel-processes=", number_processors),
     lines
   )
+
+  if (!is.null(monte_carlo_replications)) {
+    lines <- sub(
+      "^monte-carlo-replications=.*",
+      paste0("monte-carlo-replications=", monte_carlo_replications),
+      lines
+    )
+  }
+
+  if (!is.null(randomization_seed)) {
+    lines <- sub(
+      "^randomization-seed=.*",
+      paste0("randomization-seed=", randomization_seed),
+      lines
+    )
+  }
   
   writeLines(lines, prm_out)
   

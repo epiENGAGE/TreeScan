@@ -2,6 +2,9 @@
 
 This repository uses `testthat` and `covr` to ensure code is tested on every push and new features/bug fixes do not introduce new bugs.
 
+Test files are named to match the production script they cover. For example,
+`test-3_create_count_file.R` covers `treescan_project/code/3_create_count_file.R`.
+
 Run all tests locally:
 
 ```sh
@@ -17,16 +20,19 @@ Rscript coverage.R
 ```
 
 This writes `coverage/coverage-summary.json` for the GitHub coverage badge.
-On pushes to the default branch, GitHub Actions commits generated badge SVGs
-under `tests/badges/`.
-For a local HTML drill-down report, install `DT` and `htmltools`, then run:
+It also updates the local SVG badge at `tests/badges/coverage-total.svg`.
+On pushes to the default branch, GitHub Actions regenerates and commits that
+badge SVG.
+For a local HTML drill-down report and a refreshed local coverage badge SVG, run:
 
 ```sh
 cd tests
 TREESCAN_COVERAGE_HTML=true Rscript coverage.R
 ```
 
-The HTML report is generated at `coverage-report/index.html`.
+The HTML report is generated at `coverage-report/index.html`. The top-level
+README badge points to `tests/badges/coverage-total.svg`, which is updated by
+`tests/coverage.R`.
 
 By default, coverage is reported without enforcing a minimum. To fail when
 coverage is below a threshold, set `COVERAGE_THRESHOLD`:
@@ -51,3 +57,7 @@ TREESCAN_COVERAGE_ALL=true Rscript coverage.R
 ```
 
 or by adding `tests/test_data/.coverage-all`.
+
+TreeScan itself is not required for routine CI. The one-rep Monte Carlo smoke
+test is skipped unless a TreeScan binary is available at
+`treescan_project/TS_linux/treescan64` or provided with `TREESCAN_BIN`.

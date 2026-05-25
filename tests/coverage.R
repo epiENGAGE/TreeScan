@@ -7,6 +7,9 @@ if (!requireNamespace("covr", quietly = TRUE)) {
 }
 
 project_root <- normalizePath("..", mustWork = TRUE)
+Sys.setenv(TREESCAN_PROJECT_ROOT = project_root)
+Sys.setenv(TREESCAN_TEST_DATA = normalizePath("test_data", mustWork = FALSE))
+
 code_dir <- file.path(project_root, "treescan_project", "code")
 all_source_files <- list.files(
   code_dir,
@@ -19,11 +22,14 @@ strict_all_coverage <- identical(Sys.getenv("TREESCAN_COVERAGE_ALL"), "true") ||
 source_files <- all_source_files
 
 if (!strict_all_coverage) {
-  source_files <- file.path(code_dir, "4_update_parameter_file.R")
+  source_files <- file.path(
+    code_dir,
+    c("3_create_count_file.R", "4_update_parameter_file.R")
+  )
   message(
     "Coverage is in bootstrap mode. ",
     length(all_source_files), " code/*.R files were discovered, but only ",
-    length(source_files), " fixture-backed file will be executed. Set ",
+    length(source_files), " fixture-backed files will be executed. Set ",
     "TREESCAN_COVERAGE_ALL=true or create tests/test_data/.coverage-all after ",
     "adding synthetic fixtures to require all-script coverage."
   )
@@ -140,6 +146,56 @@ writeLines(
   jsonlite::toJSON(coverage_summary, auto_unbox = TRUE, pretty = TRUE),
   file.path(coverage_dir, "coverage-summary.json")
 )
+
+write_coverage_badge <- function(percent, path) {
+  dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+
+  label <- "coverage"
+  value <- sprintf("%.2f%%", percent)
+  color <- if (percent >= 80) "#4c1" else if (percent >= 50) "#dfb317" else "#e05d44"
+  label_width <- 61
+  value_width <- max(37, 7 * nchar(value) + 8)
+  total_width <- label_width + value_width
+  value_x <- label_width + value_width / 2
+
+  svg <- sprintf(
+    paste0(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="%s" height="20" role="img" aria-label="%s: %s">\n',
+      '  <title>%s: %s</title>\n',
+      '  <linearGradient id="s" x2="0" y2="100%%">\n',
+      '    <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>\n',
+      '    <stop offset="1" stop-opacity=".1"/>\n',
+      '  </linearGradient>\n',
+      '  <clipPath id="r"><rect width="%s" height="20" rx="3" fill="#fff"/></clipPath>\n',
+      '  <g clip-path="url(#r)">\n',
+      '    <rect width="%s" height="20" fill="#555"/>\n',
+      '    <rect x="%s" width="%s" height="20" fill="%s"/>\n',
+      '    <rect width="%s" height="20" fill="url(#s)"/>\n',
+      '  </g>\n',
+      '  <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">\n',
+      '    <text x="30.5" y="15" fill="#010101" fill-opacity=".3">%s</text>\n',
+      '    <text x="30.5" y="14">%s</text>\n',
+      '    <text x="%.1f" y="15" fill="#010101" fill-opacity=".3">%s</text>\n',
+      '    <text x="%.1f" y="14">%s</text>\n',
+      '  </g>\n',
+      '</svg>\n'
+    ),
+    total_width, label, value,
+    label, value,
+    total_width,
+    label_width,
+    label_width, value_width, color,
+    total_width,
+    label,
+    label,
+    value_x, value,
+    value_x, value
+  )
+
+  writeLines(svg, path)
+}
+
+write_coverage_badge(percent, file.path(project_root, "tests", "badges", "coverage-total.svg"))
 
 write_html_report <- identical(Sys.getenv("TREESCAN_COVERAGE_HTML"), "true")
 
@@ -264,8 +320,10 @@ if (write_html_report) {
     "  const table = document.getElementById('coverage-table');",
     "  const tbody = table.tBodies[0];",
     "  const headers = table.tHead.rows[0].cells;",
-    "  const currentDirection = headers[columnIndex].dataset.direction || 'asc';",
-    "  const direction = currentDirection === 'asc' ? 'desc' : 'asc';",
+    "  const currentDirection = headers[columnIndex].dataset.direction;",
+    "  const direction = currentDirection",
+    "    ? (currentDirection === 'asc' ? 'desc' : 'asc')",
+    "    : (type === 'number' ? 'desc' : 'asc');",
     "  Array.from(headers).forEach((header) => {",
     "    header.dataset.direction = '';",
     "    const marker = header.querySelector('.sort');",
@@ -273,16 +331,27 @@ if (write_html_report) {
     "  });",
     "  headers[columnIndex].dataset.direction = direction;",
     "  headers[columnIndex].querySelector('.sort').textContent = direction === 'asc' ? '▲' : '▼';",
-    "  const rows = Array.from(tbody.rows);",
-    "  rows.sort((a, b) => {",
-    "    const aValue = a.cells[columnIndex].dataset.sort || a.cells[columnIndex].textContent;",
-    "    const bValue = b.cells[columnIndex].dataset.sort || b.cells[columnIndex].textContent;",
+    "  const groups = [];",
+    "  for (let i = 0; i < tbody.rows.length; i += 1) {",
+    "    const row = tbody.rows[i];",
+    "    if (row.classList.contains('source-row')) continue;",
+    "    const sourceRow = tbody.rows[i + 1]?.classList.contains('source-row') ? tbody.rows[i + 1] : null;",
+    "    groups.push({ row, sourceRow });",
+    "  }",
+    "  groups.sort((a, b) => {",
+    "    const aCell = a.row.cells[columnIndex];",
+    "    const bCell = b.row.cells[columnIndex];",
+    "    const aValue = aCell.dataset.sort || aCell.textContent;",
+    "    const bValue = bCell.dataset.sort || bCell.textContent;",
     "    const result = type === 'number'",
     "      ? Number(aValue) - Number(bValue)",
     "      : aValue.localeCompare(bValue);",
     "    return direction === 'asc' ? result : -result;",
     "  });",
-    "  rows.forEach((row) => tbody.appendChild(row));",
+    "  groups.forEach(({ row, sourceRow }) => {",
+    "    tbody.appendChild(row);",
+    "    if (sourceRow) tbody.appendChild(sourceRow);",
+    "  });",
     "}",
     "function toggleSource(id) {",
     "  const row = document.getElementById(id);",

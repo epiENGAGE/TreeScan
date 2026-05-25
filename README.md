@@ -36,8 +36,8 @@ cd tests
 Rscript coverage.R
 ```
 
-To regenerate the local HTML drill-down coverage report, install `DT` and
-`htmltools`, then run:
+To regenerate the local HTML drill-down coverage report and refresh the local
+coverage badge SVG, run:
 
 ```sh
 cd tests
@@ -45,4 +45,7 @@ TREESCAN_COVERAGE_HTML=true Rscript coverage.R
 ```
 
 The HTML report is generated at `coverage-report/index.html` and is ignored by
-git. The badge percentage is based on `coverage/coverage-summary.json`.
+git. The top-level README badge points to `tests/badges/coverage-total.svg`;
+`tests/coverage.R` updates that SVG from the whole `treescan_project/code/`
+coverage percentage. On pushes to the default branch, GitHub Actions also
+regenerates and commits the badge SVG.
