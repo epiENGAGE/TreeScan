@@ -1,0 +1,40 @@
+Package: TreeScanEpiEngage
+Type: Project
+Title: TreeScan World Cup 2026 Preparation
+Version: 0.0.0.9000
+Description: R-based TreeScan analysis preparation, testing, and coverage
+    tooling for the TreeScan World Cup 2026 preparation workflow.
+Encoding: UTF-8
+Depends:
+    R (>= 4.3)
+Imports:
+    data.table,
+    dplyr,
+    lubridate,
+    sessioninfo,
+    stringr,
+    tidyr
+Suggests:
+    covr,
+    jsonlite,
+    testthat
+Config/Needs/ci:
+    covr,
+    jsonlite,
+    sessioninfo,
+    testthat
+Config/Needs/pipeline:
+    ggplot2,
+    MMWRweek,
+    openxlsx,
+    png,
+    purrr,
+    readr,
+    Rnssp,
+    scales,
+    sf,
+    stringi,
+    tibble,
+    tigris,
+    timeDate,
+    tidyverse

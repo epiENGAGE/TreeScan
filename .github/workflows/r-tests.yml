@@ -26,10 +26,8 @@ jobs:
           cache: always
           install-pandoc: false
           install-quarto: false
-          packages: |
-            any::testthat
-            any::covr
-            any::jsonlite
+          dependencies: '"hard"'
+          needs: ci
 
       - name: Run tests
         working-directory: tests
