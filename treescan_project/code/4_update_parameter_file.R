@@ -14,6 +14,8 @@ update_prm_file <- function(
     results_filename = NULL,
     not_evaluated_nodes_file = NULL,
     monte_carlo_replications = NULL,
+    restrict_evaluated_nodes = NULL,
+    early_termination_threshold = NULL,
     randomization_seed = NULL
 ) {
   end_date <- as.Date(end_date)
@@ -162,6 +164,22 @@ update_prm_file <- function(
     lines <- sub(
       "^monte-carlo-replications=.*",
       paste0("monte-carlo-replications=", monte_carlo_replications),
+      lines
+    )
+  }
+
+  if (!is.null(restrict_evaluated_nodes)) {
+    lines <- sub(
+      "^restrict-evaluated-nodes=.*",
+      paste0("restrict-evaluated-nodes=", restrict_evaluated_nodes),
+      lines
+    )
+  }
+
+  if (!is.null(early_termination_threshold)) {
+    lines <- sub(
+      "^early-termination-threshold=.*",
+      paste0("early-termination-threshold=", early_termination_threshold),
       lines
     )
   }

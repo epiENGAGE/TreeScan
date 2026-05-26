@@ -120,6 +120,8 @@ testthat::test_that("synthetic TreeScan parameter template is rewritten to temp 
     results_filename = results_path,
     not_evaluated_nodes_file = not_eval_path,
     monte_carlo_replications = 1,
+    restrict_evaluated_nodes = "n",
+    early_termination_threshold = 1,
     randomization_seed = 12345678
   )
 
@@ -130,6 +132,8 @@ testthat::test_that("synthetic TreeScan parameter template is rewritten to temp 
   testthat::expect_true(paste0("results-filename=", results_path) %in% lines)
   testthat::expect_true(paste0("not-evaluated-nodes-file=", not_eval_path) %in% lines)
   testthat::expect_true("monte-carlo-replications=1" %in% lines)
+  testthat::expect_true("restrict-evaluated-nodes=n" %in% lines)
+  testthat::expect_true("early-termination-threshold=1" %in% lines)
   testthat::expect_true("randomization-seed=12345678" %in% lines)
   testthat::expect_true("parallel-processes=1" %in% lines)
 })
