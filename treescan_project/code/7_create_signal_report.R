@@ -406,7 +406,7 @@ if (length(unique(valid_nodes)) > 0) {
     ) %>%
     left_join(artifact_flag, by = "Node.Identifier") %>%
     left_join(presence_wide, by = "Node.Identifier") %>%
-    arrange(Node.Identifier)
+    arrange(Trend)
   
   final_result <- final_result %>%
     dplyr::select(
@@ -423,12 +423,6 @@ if (length(unique(valid_nodes)) > 0) {
   # -----------------------------
   wb <- createWorkbook()
   addWorksheet(wb, "Signals")
-  
-  TS_Results_today <- TS_Results_today %>%
-    dplyr::select(-`Data artifact warning`)
-  
-  TS_Results_today <- TS_Results_today %>%
-    dplyr::select(-`Masked in lag 1 warning`)
   
   writeDataTable(wb, sheet = "Signals", x = TS_Results_today, tableStyle = "TableStyleMedium2")
   freezePane(wb, sheet = "Signals", firstRow = TRUE, firstCol = TRUE)
@@ -722,3 +716,4 @@ if (length(unique(valid_nodes)) > 0) {
 } else {
   print("You have no new signals")
 }
+
