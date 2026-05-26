@@ -11,7 +11,7 @@ parent_dir <- gsub("\\\\", "/", parent_dir)
 base_dir <- dirname(parent_dir)
 
 # Is this your first time installing?
-first_time <- FALSE
+first_time <- TRUE
 
 # If you're on a server, uploading treescan download unzipped automatically
 # but still needs to install!
@@ -74,7 +74,7 @@ if (isTRUE(first_time)){
     "svDialogs",
     "tcltk",
     "timeDate",
-    "png"
+    "tigris"
   ))
 }
 
