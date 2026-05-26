@@ -1,4 +1,6 @@
 normalize_system_metadata <- function(lines) {
+  # Generated timestamps should not create a new metadata file by themselves.
+  # Keep the comparison focused on R, OS, and package-version differences.
   lines <- lines[!grepl("^Generated at:", lines)]
   lines <- lines[!grepl("^Run date:", lines)]
   lines <- lines[!grepl("^ date[[:space:]]+", lines)]
@@ -41,6 +43,8 @@ record_system_metadata <- function(parent_dir) {
   metadata_dir <- file.path(parent_dir, "system_metadata")
   dir.create(metadata_dir, recursive = TRUE, showWarnings = FALSE)
 
+  # Metadata capture should help reproducibility, not block an operational run
+  # on an older machine that has not installed sessioninfo yet.
   if (!requireNamespace("sessioninfo", quietly = TRUE)) {
     warning(
       "Package 'sessioninfo' is not installed; skipping system metadata capture.",

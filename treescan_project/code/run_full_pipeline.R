@@ -64,6 +64,7 @@ if (isTRUE(first_time)){
     "jsonlite",
     "readr",
     "rlang",
+    "sessioninfo",
     "dplyr",
     "purrr",
     "sodium",
@@ -83,6 +84,10 @@ if (isTRUE(first_time)){
 if (isTRUE(first_time)){
   devtools::install_github("cdcgov/Rnssp", force = TRUE)
 }
+
+# Record R, OS, and package versions for reproducibility.
+source(paste0(parent_dir, "/code/0.1_record_system_metadata.R"))
+record_system_metadata(parent_dir)
 
 # Run the script that locates treescan
 source(paste0(parent_dir, "/code/0_locate_treescan.R"))
