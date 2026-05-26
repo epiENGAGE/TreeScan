@@ -6,11 +6,22 @@ if (!requireNamespace("covr", quietly = TRUE)) {
   )
 }
 
+source("dependencies.R", local = TRUE)
+
 project_root <- normalizePath("..", mustWork = TRUE)
 Sys.setenv(TREESCAN_PROJECT_ROOT = project_root)
 Sys.setenv(TREESCAN_TEST_DATA = normalizePath("test_data", mustWork = FALSE))
 
 code_dir <- file.path(project_root, "treescan_project", "code")
+
+# Coverage has two file sets on purpose:
+# 1) all_source_files is every R script in the production code directory and is
+#    used for the final whole-code denominator, so untested files count as 0%.
+# 2) source_files is the smaller set that covr may safely source during tests.
+#    Many legacy pipeline scripts still execute downloads, dialogs, TreeScan, or
+#    production file writes as soon as they are sourced. Until those files are
+#    converted to testable functions, keep them out of source_files but still in
+#    all_source_files so the coverage badge stays honest.
 all_source_files <- list.files(
   code_dir,
   pattern = "[.][Rr]$",
@@ -24,8 +35,17 @@ source_files <- all_source_files
 if (!strict_all_coverage) {
   source_files <- file.path(
     code_dir,
-    c("3_create_count_file.R", "4_update_parameter_file.R")
+    c(
+      "0.1_record_system_metadata.R",
+      "3_create_count_file.R",
+      "4_update_parameter_file.R"
+    )
   )
+
+  # Add a code file here only after it has synthetic fixtures and can be sourced
+  # without external credentials, GUI prompts, long compute, or production data.
+  # Once every script has that shape, set TREESCAN_COVERAGE_ALL=true or add
+  # tests/test_data/.coverage-all and this bootstrap list can go away.
   message(
     "Coverage is in bootstrap mode. ",
     length(all_source_files), " code/*.R files were discovered, but only ",
@@ -38,6 +58,8 @@ if (!strict_all_coverage) {
 message("Coverage source files:")
 message(paste0("  - ", basename(source_files), collapse = "\n"))
 
+# covr sources scripts in parent_env. These values mimic the globals expected by
+# the current numbered scripts while pointing everything at temp/test locations.
 coverage_env <- new.env(parent = globalenv())
 coverage_env$parent_dir <- file.path(tempdir(), paste0("treescan-coverage-", Sys.getpid()))
 coverage_env$final_date <- as.Date("2026-05-23")

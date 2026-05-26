@@ -6,6 +6,8 @@ if (!requireNamespace("testthat", quietly = TRUE)) {
   )
 }
 
+source("dependencies.R", local = TRUE)
+
 Sys.setenv(TREESCAN_PROJECT_ROOT = normalizePath("..", mustWork = TRUE))
 Sys.setenv(TREESCAN_TEST_DATA = normalizePath("test_data", mustWork = FALSE))
 
