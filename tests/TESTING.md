@@ -2,6 +2,11 @@
 
 This repository uses `testthat` and `covr` to ensure code is tested on every push and new features/bug fixes do not introduce new bugs.
 
+R package dependencies for the current test-backed code live in the top-level
+`DESCRIPTION` file. GitHub Actions installs the hard dependencies from that
+file plus `Config/Needs/ci`, then caches the installed package library for
+later runs.
+
 Test files are named to match the production script they cover. For example,
 `test-3_create_count_file.R` covers `treescan_project/code/3_create_count_file.R`.
 
@@ -61,3 +66,8 @@ or by adding `tests/test_data/.coverage-all`.
 TreeScan itself is not required for routine CI. The one-rep Monte Carlo smoke
 test is skipped unless a TreeScan binary is available at
 `treescan_project/TS_linux/treescan64` or provided with `TREESCAN_BIN`.
+
+The full pipeline writes local system metadata to
+`treescan_project/system_metadata/session_info_*.txt` when R, OS, or package
+versions change. Those generated files are ignored by git because they describe
+the machine that ran the pipeline.
