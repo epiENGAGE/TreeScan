@@ -406,7 +406,7 @@ if (length(unique(valid_nodes)) > 0) {
     ) %>%
     left_join(artifact_flag, by = "Node.Identifier") %>%
     left_join(presence_wide, by = "Node.Identifier") %>%
-    arrange(Trend)
+    arrange(Trend, desc(Recurrence.Interval))
   
   final_result <- final_result %>%
     dplyr::select(
