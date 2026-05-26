@@ -367,11 +367,54 @@ if (length(unique(valid_nodes)) > 0) {
       `Masked in lag 1 warning`
     )
   
-  # Final output
-  final_result <- base_rows %>%
+  # -------------------------------------------------
+  # Collapse all lag rows to one row per signal
+  # using the lowest available lag for EACH value
+  # -------------------------------------------------
+  
+  ri_cols <- grep("^RI_", names(all_data), value = TRUE)
+  rr_cols <- grep("^RR_", names(all_data), value = TRUE)
+  
+  value_cols <- c(
+    "Recurrence.Interval",  # today's RI
+    ri_cols,                # prior days' RI
+    "Relative.Risk",        # today's RR
+    rr_cols                 # prior days' RR
+  )
+  
+  first_nonmissing <- function(x) {
+    x <- x[!is.na(x)]
+    if (length(x) == 0) NA else x[1]
+  }
+  
+  final_result <- all_data %>%
+    arrange(Node.Identifier, lag) %>%
+    group_by(Node.Identifier) %>%
+    summarise(
+      Trend = first_nonmissing(Trend),
+      Node.Name = first_nonmissing(Node.Name),
+      
+      across(
+        all_of(value_cols),
+        first_nonmissing
+      ),
+      
+      lag = first_nonmissing(lag),
+      source_df = first_nonmissing(source_df),
+      
+      .groups = "drop"
+    ) %>%
     left_join(artifact_flag, by = "Node.Identifier") %>%
     left_join(presence_wide, by = "Node.Identifier") %>%
     arrange(Node.Identifier)
+  
+  final_result <- final_result %>%
+    dplyr::select(
+      -`Data artifact warning`,
+      -`Masked in lag 1 warning`,
+      -`lag`,
+      -`source_df`,
+    )
   
   TS_Results_today <- final_result
   
