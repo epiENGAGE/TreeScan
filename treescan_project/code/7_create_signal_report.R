@@ -12,6 +12,17 @@ artifact_scores <- readRDS(paste0(parent_dir, "/data_artifact_assessment/artifac
 A <- readRDS(paste0(parent_dir, "/lag/curves/lag_curve_", format(final_date, "%Y-%m"), ".rds"))
 DFW <- readRDS(paste0(parent_dir, "/data/data for lag/data_for_lag.rds"))
 
+# How many simulations did you run your analysis on?
+
+# Let's read in the monte-carlo simulation line of your param file
+line119 <- readLines(
+  paste0(parent_dir, "/params/Parameter_File_lag", initial_lags[1], ".prm"),
+  warn = FALSE
+)[119]
+
+# Now get number of simulations
+monte_carlo_reps <- as.integer(sub("^.*=", "", line119))
+
 # Helper: safely close only the device opened for a PNG file
 safe_dev_off <- function(dev_id) {
   if (!is.null(dev_id) && dev_id %in% dev.list()) {
@@ -269,13 +280,13 @@ if (length(unique(valid_nodes)) > 0) {
         trend <- "1.New"
       }
       
-      if (!is.na(yesterday_ri) && today_ri == 100000 && yesterday_ri == 100000) {
+      if (!is.na(yesterday_ri) && today_ri == (monte_carlo_reps + 1) && yesterday_ri == (monte_carlo_reps + 1)) {
         trend <- "4.Maximum"
       }
       
       if (!is.na(yesterday_ri) &&
-          today_ri == 100000 &&
-          yesterday_ri == 100000 &&
+          today_ri == (monte_carlo_reps + 1) &&
+          yesterday_ri == (monte_carlo_reps + 1) &&
           node_id %in% sigs_maxout) {
         trend <- "3.Maximum-outlier"
       }

@@ -67,6 +67,8 @@ TS_Results_all <- data.frame(
   check.names = FALSE
 )
   
+nodes_w_dash <- c()
+
 for (lag in initial_lags){
   
   # Get required nodes
@@ -88,6 +90,8 @@ for (lag in initial_lags){
   TS_Results_all <- rbind(TS_Results_all, TS_Results_today)
   
   Nodes <- unique(append(Nodes, sub(".*-", "", TS_Results_today[,2])))
+  nodes_w_dash <- unique(append(nodes_w_dash, TS_Results_today$Node.Identifier))
+  
   print(Nodes)
 }
   
@@ -395,6 +399,8 @@ for(i in 1:length(valid_nodes))
     next
   }
   
+  node_codes_full <- TS_Results_today$Node.Identifier[ts_idx]
+  
   window_start <- as.Date(TS_Results_today$Time.Window.Start[ts_idx])
   
   match_dx_archive <- !is.na(dx_clean_archive) &
@@ -531,7 +537,7 @@ for(i in 1:length(valid_nodes))
     if (length(current_vals) > 0 && nrow(hlm_data) > 0) {
       threshold <- mean(hlm_data$n, na.rm = TRUE) + 2 * sd(hlm_data$n, na.rm = TRUE)
       if (max(current_vals, na.rm = TRUE) > threshold) {
-        sigs_maxout <- c(sigs_maxout, as.character(node_codes))
+        sigs_maxout <- c(sigs_maxout, as.character(node_codes_full))
       }
     }
     
