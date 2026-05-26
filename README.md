@@ -17,6 +17,11 @@ treescan_project/code/run_full_pipeline.R
 
 `run_full_pipeline.R` coordinates the numbered scripts in `treescan_project/code/` and expects to be run from the TreeScan project context with the required local data, parameter files, and TreeScan binary in place.
 
+Each full pipeline run records R, operating system, and package-version metadata
+with `sessioninfo::session_info()` in `treescan_project/system_metadata/`. A
+new dated metadata file is only written when the current environment differs
+from the most recent recorded environment.
+
 
 ## Testing
 
