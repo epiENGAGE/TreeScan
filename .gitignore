@@ -3,3 +3,8 @@ coverage/
 coverage-report/
 lib/
 .DS_Store
+treescan_project/system_metadata/session_info_*.txt
+treescan_project/TS_linux/treescan
+treescan_project/TS_linux/treescan64
+treescan_project/TS_windows/treescan.exe
+treescan_project/TS_windows/treescan64.exe
