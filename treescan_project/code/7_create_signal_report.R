@@ -429,6 +429,41 @@ if (length(unique(valid_nodes)) > 0) {
   
   TS_Results_today <- final_result
   
+  # List signal interpretation files
+  if (isTRUE(subregion)){
+    # List signal interpretation files
+    files_from_6 <- list.files(paste0(parent_dir, "/signal_interpretation_subregion/"))
+  } else {
+    files_from_6 <- list.files(paste0(parent_dir, "/signal_interpretation/"))
+  }
+  
+  # Get node identifiers in latest report
+  NI <- TS_Results_today$Node.Identifier
+  
+  # Initialise list of latest dates
+  Dates <- c()
+  
+  # When was the last signal interpretation sheet created for each signal?
+  for (i in NI){
+    # Get the tidied node
+    j <- gsub("\\.", "", sub(".*-", "", i))
+    
+    # Get dates for the 
+    j_dates <- as.Date(sub(paste0("_", j, "\\.xlsx$"), "", files_from_6[grepl(paste0("_", j, "\\.xlsx$"), files_from_6)]))
+    
+    if (length(j_dates) > 0){
+      # What was the latest date?  
+      latest_j_date <- as.character(max(j_dates))
+    } else {
+      # Return none
+      latest_j_date <- "Not present"
+    }
+    
+    Dates <- append(Dates, latest_j_date)
+  }
+  
+  TS_Results_today$`Most recent linelist` <- Dates
+  
   # -----------------------------
   # 6) Build workbook: Signals sheet
   # -----------------------------
