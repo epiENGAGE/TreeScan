@@ -283,6 +283,11 @@ archive_deduped$admitreason <- normalize_text_utf8(archive_deduped$Admit_Reason_
 
 archive_deduped$key <- archive_deduped$C_Unique_Patient_ID
 archive_deduped$hospital <- archive_deduped$HospitalName
+
+earliest_by_hospital <- archive_deduped %>%
+  group_by(hospital) %>%
+  summarise(earliest_date = min(date, na.rm = TRUE), .groups = "drop")
+
 archive_deduped$zipcode <- archive_deduped$Patient_Zip
 archive_deduped$patientid <- archive_deduped$C_Unique_Patient_ID
 archive_deduped$sex <- archive_deduped$Sex
@@ -1255,19 +1260,41 @@ for(i in 1:length(valid_nodes))
     }
     
     hosp_cb <- merge(hosp_c, hosp_b, by = "hospital", all = TRUE)
+    
     if (nrow(hosp_cb) == 0) {
       hosp_cb <- data.frame(
         hospital = character(),
         ClusterPct = numeric(),
         BaselinePct = numeric(),
         diff = numeric(),
+        earliest_date = as.Date(character()),
         stringsAsFactors = FALSE
       )
     } else {
       hosp_cb$ClusterPct[is.na(hosp_cb$ClusterPct)] <- 0
       hosp_cb$BaselinePct[is.na(hosp_cb$BaselinePct)] <- 0
       hosp_cb$diff <- hosp_cb$ClusterPct - hosp_cb$BaselinePct
-      hosp_cb <- hosp_cb[order(-hosp_cb$diff), , drop = FALSE]
+      
+      hosp_cb <- merge(
+        hosp_cb,
+        earliest_by_hospital,
+        by = "hospital",
+        all.x = TRUE,
+        sort = FALSE
+      )
+      
+      hosp_cb <- hosp_cb[order(hosp_cb$diff), , drop = FALSE]
+      
+      hosp_name_cols <- ifelse(
+        !is.na(hosp_cb$earliest_date) & hosp_cb$earliest_date >= final_date - 90,
+        "red",
+        ifelse(
+          !is.na(hosp_cb$earliest_date) & hosp_cb$earliest_date >= final_date %m-% months(15),
+          "gold",
+          "black"
+        )
+      )
+      
       hosp_cb$hospital <- gsub("HOSPITAL", "HOSP", hosp_cb$hospital)
       hosp_cb$hospital <- gsub("MEDICAL", "MED", hosp_cb$hospital)
       hosp_cb$hospital <- gsub("CENTER", "CTR", hosp_cb$hospital)
@@ -1278,14 +1305,23 @@ for(i in 1:length(valid_nodes))
     par(mar = c(10, 4, 4, 2))
     
     if (nrow(hosp_cb) > 0) {
-      barplot(
+      bp <- barplot(
         hosp_cb$diff * 100,
         ylab = "%",
-        names.arg = hosp_cb$hospital,
-        las = 2,
-        cex.names = 0.35,
+        names.arg = rep("", nrow(hosp_cb)),
         main = "Difference in percent of ED visits by hospital between cluster and baseline periods",
         cex.main = 0.8
+      )
+      
+      text(
+        x = bp,
+        y = par("usr")[3] - 0.04 * diff(par("usr")[3:4]),
+        labels = hosp_cb$hospital,
+        srt = 90,
+        adj = 1,
+        xpd = TRUE,
+        cex = 0.35,
+        col = hosp_name_cols
       )
     } else {
       plot.new()
