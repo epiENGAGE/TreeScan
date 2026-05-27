@@ -12,6 +12,17 @@ artifact_scores <- readRDS(paste0(parent_dir, "/data_artifact_assessment/artifac
 A <- readRDS(paste0(parent_dir, "/lag/curves/lag_curve_", format(final_date, "%Y-%m"), ".rds"))
 DFW <- readRDS(paste0(parent_dir, "/data/data for lag/data_for_lag.rds"))
 
+# How many simulations did you run your analysis on?
+
+# Let's read in the monte-carlo simulation line of your param file
+line119 <- readLines(
+  paste0(parent_dir, "/params/Parameter_File_lag", initial_lags[1], ".prm"),
+  warn = FALSE
+)[119]
+
+# Now get number of simulations
+monte_carlo_reps <- as.integer(sub("^.*=", "", line119))
+
 # Helper: safely close only the device opened for a PNG file
 safe_dev_off <- function(dev_id) {
   if (!is.null(dev_id) && dev_id %in% dev.list()) {
@@ -269,13 +280,13 @@ if (length(unique(valid_nodes)) > 0) {
         trend <- "1.New"
       }
       
-      if (!is.na(yesterday_ri) && today_ri == 100000 && yesterday_ri == 100000) {
+      if (!is.na(yesterday_ri) && today_ri == (monte_carlo_reps + 1) && yesterday_ri == (monte_carlo_reps + 1)) {
         trend <- "4.Maximum"
       }
       
       if (!is.na(yesterday_ri) &&
-          today_ri == 100000 &&
-          yesterday_ri == 100000 &&
+          today_ri == (monte_carlo_reps + 1) &&
+          yesterday_ri == (monte_carlo_reps + 1) &&
           node_id %in% sigs_maxout) {
         trend <- "3.Maximum-outlier"
       }
@@ -367,25 +378,97 @@ if (length(unique(valid_nodes)) > 0) {
       `Masked in lag 1 warning`
     )
   
-  # Final output
-  final_result <- base_rows %>%
+  # -------------------------------------------------
+  # Collapse all lag rows to one row per signal
+  # using the lowest available lag for EACH value
+  # -------------------------------------------------
+  
+  ri_cols <- grep("^RI_", names(all_data), value = TRUE)
+  rr_cols <- grep("^RR_", names(all_data), value = TRUE)
+  
+  value_cols <- c(
+    "Recurrence.Interval",  # today's RI
+    ri_cols,                # prior days' RI
+    "Relative.Risk",        # today's RR
+    rr_cols                 # prior days' RR
+  )
+  
+  first_nonmissing <- function(x) {
+    x <- x[!is.na(x)]
+    if (length(x) == 0) NA else x[1]
+  }
+  
+  final_result <- all_data %>%
+    arrange(Node.Identifier, lag) %>%
+    group_by(Node.Identifier) %>%
+    summarise(
+      Trend = first_nonmissing(Trend),
+      Node.Name = first_nonmissing(Node.Name),
+      
+      across(
+        all_of(value_cols),
+        first_nonmissing
+      ),
+      
+      lag = first_nonmissing(lag),
+      source_df = first_nonmissing(source_df),
+      
+      .groups = "drop"
+    ) %>%
     left_join(artifact_flag, by = "Node.Identifier") %>%
     left_join(presence_wide, by = "Node.Identifier") %>%
-    arrange(Node.Identifier)
+    arrange(Trend, desc(Recurrence.Interval))
+  
+  final_result <- final_result %>%
+    dplyr::select(
+      -`Data artifact warning`,
+      -`Masked in lag 1 warning`,
+      -`lag`,
+      -`source_df`,
+    )
   
   TS_Results_today <- final_result
+  
+  # List signal interpretation files
+  if (isTRUE(subregion)){
+    # List signal interpretation files
+    files_from_6 <- list.files(paste0(parent_dir, "/signal_interpretation_subregion/"))
+  } else {
+    files_from_6 <- list.files(paste0(parent_dir, "/signal_interpretation/"))
+  }
+  
+  # Get node identifiers in latest report
+  NI <- TS_Results_today$Node.Identifier
+  
+  # Initialise list of latest dates
+  Dates <- c()
+  
+  # When was the last signal interpretation sheet created for each signal?
+  for (i in NI){
+    # Get the tidied node
+    j <- gsub("\\.", "", sub(".*-", "", i))
+    
+    # Get dates for the 
+    j_dates <- as.Date(sub(paste0("_", j, "\\.xlsx$"), "", files_from_6[grepl(paste0("_", j, "\\.xlsx$"), files_from_6)]))
+    
+    if (length(j_dates) > 0){
+      # What was the latest date?  
+      latest_j_date <- as.character(max(j_dates))
+    } else {
+      # Return none
+      latest_j_date <- "Not present"
+    }
+    
+    Dates <- append(Dates, latest_j_date)
+  }
+  
+  TS_Results_today$`Most recent linelist` <- Dates
   
   # -----------------------------
   # 6) Build workbook: Signals sheet
   # -----------------------------
   wb <- createWorkbook()
   addWorksheet(wb, "Signals")
-  
-  TS_Results_today <- TS_Results_today %>%
-    dplyr::select(-`Data artifact warning`)
-  
-  TS_Results_today <- TS_Results_today %>%
-    dplyr::select(-`Masked in lag 1 warning`)
   
   writeDataTable(wb, sheet = "Signals", x = TS_Results_today, tableStyle = "TableStyleMedium2")
   freezePane(wb, sheet = "Signals", firstRow = TRUE, firstCol = TRUE)
@@ -679,3 +762,4 @@ if (length(unique(valid_nodes)) > 0) {
 } else {
   print("You have no new signals")
 }
+

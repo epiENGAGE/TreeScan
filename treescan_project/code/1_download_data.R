@@ -46,6 +46,7 @@ build_datadetails_url <- function(
     "&geographySystem=", geographySystem,
     "&detector=nodetectordetector",
     "&timeResolution=", timeResolution,
+    "&Facility_Type_Description=Emergency%20Care",
     field_list_url,
     geo_url
   )
