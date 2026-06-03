@@ -12,8 +12,8 @@ This project provides a structured workflow to prepare data, run TreeScan, and p
 * Click the green **Code** button on GitHub
 * Select **Download ZIP**
 * Extract the ZIP file
-* Locate the treescan_project subfolder
-* Move treescan_project to your desired working directory
+* Locate the `treescan_project` subfolder
+* Move `treescan_project` to your desired working directory
 
 <hr style="border: 2px solid #333; width: 50%;" />
 
@@ -44,7 +44,7 @@ https://www.treescan.org/download_treescan.html
 
 After downloading:
 
-Move the TreeScan files into the correct subfolder inside treescan_project:
+Move the TreeScan files into the correct subfolder inside `treescan_project`:
 | Environment |	Folder |
 | ----------- | ------ |
 | Windows |	TS_windows/ |
@@ -57,8 +57,8 @@ Move the TreeScan files into the correct subfolder inside treescan_project:
 
 * Launch RStudio
 * In the bottom-right file explorer:
-  * Navigate to: treescan_project/code/
-  * Open: run_full_pipeline.R
+  * Navigate to: `treescan_project/code/`
+  * Open: `run_full_pipeline.R`
 
 <hr style="border: 2px solid #333; width: 50%;" />
 
@@ -70,7 +70,9 @@ Before running, update the following:
 
 Update line 4 to match your local path:
 
+```r
 setwd("~/TreeScan-implementation/treescan_project")
+```
 
 Replace with wherever you saved treescan_project.
 
@@ -78,8 +80,10 @@ Replace with wherever you saved treescan_project.
 
 Modify these variables depending on your setup:
 
+```r
 server <- FALSE      # Set to TRUE if running on a server
 first_time <- TRUE   # Set to FALSE after first run
+```
 
 <hr style="border: 2px solid #333; width: 50%;" />
 
@@ -95,6 +99,6 @@ The pipeline will:
 <hr style="border: 2px solid #333; width: 50%;" />
 
 ## ⚠️ Notes
-* Ensure the correct TreeScan version is placed in the matching folder (TS_windows or TS_linux)
+* Ensure the correct TreeScan version is placed in the matching folder (`TS_windows` or `TS_linux`)
 * Using the **non-graphical version is required**
 * Incorrect working directory paths will cause errors
