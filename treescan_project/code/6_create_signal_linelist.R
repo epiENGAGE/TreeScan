@@ -94,7 +94,7 @@ for (lag in initial_lags){
   
   print(Nodes)
 }
-  
+
 TS_Results_today <- TS_Results_all
 
 is_related_icd10 <- function(a, b) {
@@ -141,6 +141,24 @@ TS_Results_today <- TS_Results_today %>%
   ) %>%
   filter(node_clean %in% filtered_nodes) %>%
   distinct(node_clean, .keep_all = TRUE)
+
+# Load CSV
+cause_file <- read.csv(paste0(parent_dir, "/data/common cause file final.csv"), stringsAsFactors = FALSE)
+
+# Function: if a node is a group/category in column X1,
+# replace it with all rows whose parent is that node in X2.
+expand_node <- function(node, lookup_df) {
+  children <- lookup_df$X1[lookup_df$X2 == node]
+  
+  if (length(children) > 0) {
+    return(children)
+  } else {
+    return(node)
+  }
+}
+
+# Apply to all nodes
+filtered_nodes <- unlist(lapply(filtered_nodes, expand_node, lookup_df = cause_file))
 
 # Reload just in case
 load(file.path(parent_dir, "myProfile.rda"))
