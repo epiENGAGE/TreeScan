@@ -22,7 +22,7 @@ if (isTRUE(subregion)){
   # Now what dates need processing
   dates_to_process <- sort(unique(c(
     missing_dates,
-    recent_40_dates
+    recent_30_dates
   )))
   
   # Loop through only dates that need to be subset now
