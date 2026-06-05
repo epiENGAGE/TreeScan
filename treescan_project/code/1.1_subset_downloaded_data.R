@@ -14,7 +14,7 @@ if (isTRUE(subregion)){
     as.Date()
   
   # What dates are we missing
-  missing_dates <- setdiff(subset_target_dates, dates_in_dir)
+  missing_dates <- as.Date(setdiff(subset_target_dates, dates_in_dir))
   
   # Now get 30 most recent dates as they were refreshed
   recent_30_dates <- seq.Date(subset_end_date - 29, subset_end_date, by = "day")
