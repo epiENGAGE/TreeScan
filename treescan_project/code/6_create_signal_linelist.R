@@ -1968,7 +1968,7 @@ for(i in 1:length(valid_nodes))
       saveWorkbook(
         wb,
         paste0(
-          parent_dir, "/signal_interpretation/", END_DATE, "_",
+          parent_dir, "/signal_interpretation/", final_Date, "_",
           gsub("\\|", "_", gsub("2\\-", "", node_codes)),
           ".xlsx"
         ),
@@ -1980,7 +1980,7 @@ for(i in 1:length(valid_nodes))
       saveWorkbook(
         wb,
         paste0(
-          parent_dir, "/signal_interpretation_subregion/", END_DATE, "_",
+          parent_dir, "/signal_interpretation_subregion/", final_date, "_",
           gsub("\\|", "_", gsub("2\\-", "", node_codes)),
           ".xlsx"
         ),
