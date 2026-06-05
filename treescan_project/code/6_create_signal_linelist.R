@@ -711,6 +711,98 @@ for(i in 1:length(valid_nodes))
     dev.off()
     
     # ------------------------------------------------------------
+    # Temporal cluster observed/expected bar plot
+    # ------------------------------------------------------------
+    
+    temporal <- read.csv(
+      paste0(
+        parent_dir,
+        "/results/",
+        final_date,
+        "/Results_lag",
+        lag,
+        "_",
+        final_date,
+        ".temporal.csv"
+      ),
+      check.names = FALSE
+    )
+    
+    temporal$Node.clean <- sub("^[^-]+-", "", temporal[["Node ID"]])
+    
+    matching_clusters <- unique(
+      temporal$Cluster[temporal$Node.clean == valid_nodes[i]]
+    )
+    
+    if (length(matching_clusters) > 0) {
+      
+      temporal2 <- temporal[temporal$Cluster %in% matching_clusters, , drop = FALSE]
+      temporal2$Date <- as.Date(temporal2$Date)
+      temporal2 <- temporal2[order(temporal2$Date), , drop = FALSE]
+      
+      temporal_trend <- tempfile(fileext = ".png")
+      
+      png(temporal_trend, width = 1600, height = 600, res = 150)
+      
+      dates <- temporal2$Date
+      
+      bar_cols <- ifelse(temporal2[["In Cluster"]] == 0, "white", "grey70")
+      
+      op <- par(mar = c(8, 5, 4, 2) + 0.1)
+      
+      bp <- barplot(
+        height = temporal2[["Observed (Inside Cluster)"]],
+        col = bar_cols,
+        border = "black",
+        names.arg = rep("", length(dates)),
+        xlab = "",
+        ylab = "Number of cases",
+        ylim = c(0, max(
+          temporal2[["Observed (Inside Cluster)"]],
+          temporal2[["Expected (Inside Cluster)"]],
+          na.rm = TRUE
+        ) * 1.15)
+      )
+      
+      lines(
+        x = bp,
+        y = temporal2[["Expected (Inside Cluster)"]],
+        type = "l",
+        lwd = 2
+      )
+      
+      tick_idx <- seq(1, length(dates), by = 7)
+      
+      axis(
+        side = 1,
+        at = bp[tick_idx],
+        labels = dates[tick_idx],
+        las = 2
+      )
+      
+      legend(
+        "top",
+        inset = -0.08,
+        legend = c("Observed, outside cluster", "Observed, in cluster", "Expected"),
+        fill = c("white", "grey70", NA),
+        border = c("black", "black", NA),
+        lty = c(NA, NA, 1),
+        lwd = c(NA, NA, 2),
+        horiz = TRUE,
+        bty = "n",
+        xpd = NA
+      )
+      
+      par(op)
+      dev.off()
+      
+    } else {
+      
+      temporal_trend <- NULL
+      
+    }
+    
+    # ------------------------------------------------------------
     # Maps for cluster and baseline
     # Replacement version:
     #   1) Hospital ZIP - Cluster
@@ -1724,7 +1816,30 @@ for(i in 1:length(valid_nodes))
     
     # Weekly trends
     addWorksheet(wb, "Trends")
-    insertImage(wb, sheet = "Trends", file = code_trend, startRow = 1, startCol = 1, width = 10, height = 6)
+    
+    insertImage(
+      wb,
+      sheet = "Trends",
+      file = code_trend,
+      startRow = 1,
+      startCol = 1,
+      width = 10,
+      height = 6,
+      units = "in"
+    )
+    
+    if (!is.null(temporal_trend)) {
+      insertImage(
+        wb,
+        sheet = "Trends",
+        file = temporal_trend,
+        startRow = 34,
+        startCol = 1,
+        width = 10,
+        height = 4,
+        units = "in"
+      )
+    }
     
     # Maps
     addWorksheet(wb, "Maps")
