@@ -143,7 +143,7 @@ TS_Results_today <- TS_Results_today %>%
   distinct(node_clean, .keep_all = TRUE)
 
 # Load CSV
-cause_file <- read.csv(paste0(parent_dir, "/data/common cause file final.csv"), stringsAsFactors = FALSE)
+cause_file <- read.csv(paste0(parent_dir, "/data/Common_cause.csv"), stringsAsFactors = FALSE)
 
 # Function: if a node is a group/category in column X1,
 # replace it with all rows whose parent is that node in X2.
@@ -338,7 +338,7 @@ archive_deduped$age_group <- as.character(archive_deduped$age_group)
 v2 <- read.csv(paste0(parent_dir, "/data/v2/", final_date, "/lag", lag, ".csv"))
 
 # Common cause (these are for the dummy nodes that link different parts of the tree)
-common_cause <- read.csv(paste0(parent_dir, "/data/common cause file final.csv"))
+common_cause <- read.csv(paste0(parent_dir, "/data/Common_cause.csv"))
 common_cause <- common_cause[is.na(common_cause$X4)==F,]
 
 # check if any of the signals are for dummy node and if any, add the different linked nodes to the identifier value separated by "|"

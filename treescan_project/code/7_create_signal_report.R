@@ -42,7 +42,7 @@ if (length(unique(valid_nodes)) > 0) {
     print(paste0("We are now assessing lag ", lag))
     
     # Common cause: dummy nodes that link different parts of the tree
-    common_cause <- read.csv(paste0(parent_dir, "/data/common cause file final.csv"))
+    common_cause <- read.csv(paste0(parent_dir, "/data/Common_cause.csv"))
     common_cause <- common_cause[is.na(common_cause$X4) == FALSE, ]
     
     # Get required nodes
