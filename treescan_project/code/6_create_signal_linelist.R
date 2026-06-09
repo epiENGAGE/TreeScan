@@ -1968,7 +1968,7 @@ for(i in 1:length(valid_nodes))
       saveWorkbook(
         wb,
         paste0(
-          parent_dir, "/signal_interpretation/", final_Date, "_",
+          parent_dir, "/signal_interpretation/", final_date, "_",
           gsub("\\|", "_", gsub("2\\-", "", node_codes)),
           ".xlsx"
         ),
