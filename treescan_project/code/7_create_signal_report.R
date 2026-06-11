@@ -15,13 +15,18 @@ DFW <- readRDS(paste0(parent_dir, "/data/data for lag/data_for_lag.rds"))
 # How many simulations did you run your analysis on?
 
 # Let's read in the monte-carlo simulation line of your param file
-line119 <- readLines(
+# Read parameter file
+prm_lines <- readLines(
   paste0(parent_dir, "/params/Parameter_File_lag", initial_lags[1], ".prm"),
   warn = FALSE
-)[119]
+)
 
-# Now get number of simulations
-monte_carlo_reps <- as.integer(sub("^.*=", "", line119))
+# Find the monte-carlo replications line
+mc_line <- prm_lines[grep("^monte-carlo-replications=", prm_lines)]
+
+monte_carlo_reps <- as.integer(
+  sub("^monte-carlo-replications=", "", mc_line)
+)
 
 # Helper: safely close only the device opened for a PNG file
 safe_dev_off <- function(dev_id) {
