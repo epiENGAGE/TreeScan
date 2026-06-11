@@ -680,12 +680,12 @@ if (length(unique(valid_nodes)) > 0) {
       
       # CDF plot
       plot(
-        xvals / 24, 1:100,
+        xvals / 24, 1:100 / 100,
         xlim = c(0, 5),
         pch = 1,
         main = paste0("Node ", node_label, " ESSENCE-upload delay distribution"),
         xlab = "Time in days",
-        ylab = "Percentage of diagnoses reported after ED visit",
+        ylab = "Proportion of diagnoses reported after ED visit",
         type = "l",
         lwd = 2
       )
