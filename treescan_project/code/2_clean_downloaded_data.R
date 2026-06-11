@@ -45,15 +45,15 @@ unlink(
 
 # Join each chunked data together
 df_all <- as.data.frame(rbindlist(
-  lapply(files_from_dates, function(f) {
-    fread(
-      file = f,
-      colClasses = list(character = "C_Visit_Date_Time"),
-      tmpdir = safe_tmp
-    )
-  }),
-  use.names = TRUE,
-  fill = FALSE
+  lapply(files_from_dates, function(f) {
+    fread(
+      file = f,
+      colClasses = list(character = "C_Visit_Date_Time"),
+      tmpdir = safe_tmp
+    )
+  }),
+  use.names = TRUE,
+  fill = FALSE
 ))
 
 # Set as data table for speed
