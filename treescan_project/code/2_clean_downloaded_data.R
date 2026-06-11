@@ -38,9 +38,9 @@ safe_tmp <- paste0(parent_dir, "/Temp")
 dir.create(safe_tmp, showWarnings = FALSE, recursive = TRUE)
 
 unlink(
-  list.files(safe_tmp, full.names = TRUE, recursive = TRUE),
-  recursive = TRUE,
-  force = TRUE
+  list.files(safe_tmp, full.names = TRUE, recursive = TRUE),
+  recursive = TRUE,
+  force = TRUE
 )
 
 # Join each chunked data together
