@@ -714,19 +714,35 @@ for(i in 1:length(valid_nodes))
     # Temporal cluster observed/expected bar plot
     # ------------------------------------------------------------
     
-    temporal <- read.csv(
-      paste0(
-        parent_dir,
-        "/results/",
-        final_date,
-        "/Results_lag",
-        lag,
-        "_",
-        final_date,
-        ".temporal.csv"
-      ),
-      check.names = FALSE
-    )
+    if (isTRUE(subregion)){
+      temporal <- read.csv(
+        paste0(
+          parent_dir,
+          "/results_subregion/",
+          final_date,
+          "/Results_lag",
+          lag,
+          "_",
+          final_date,
+          ".temporal.csv"
+        ),
+        check.names = FALSE
+      )
+    } else {
+      temporal <- read.csv(
+        paste0(
+          parent_dir,
+          "/results/",
+          final_date,
+          "/Results_lag",
+          lag,
+          "_",
+          final_date,
+          ".temporal.csv"
+        ),
+        check.names = FALSE
+      )
+    }
     
     temporal$Node.clean <- sub("^[^-]+-", "", temporal[["Node ID"]])
     
