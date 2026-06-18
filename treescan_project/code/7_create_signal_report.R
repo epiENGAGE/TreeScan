@@ -442,6 +442,9 @@ if (length(unique(valid_nodes)) > 0) {
     files_from_6 <- list.files(paste0(parent_dir, "/signal_interpretation/"))
   }
   
+  # Remove temporary ~ files
+  files_from_6 <- files_from_6[!grepl("^~\\$", files_from_6)]
+  
   # Get node identifiers in latest report
   NI <- TS_Results_today$Node.Identifier
   
