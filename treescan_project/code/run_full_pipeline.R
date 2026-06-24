@@ -144,6 +144,10 @@ source(paste0(parent_dir, "/code/2.4_data_artifact_check.R"))
 
 # If you are running not in real time, then you likely don't want to run on multiple lags
 
+# If you just want to set initial_lags manually without using the automated approach
+# Then uncomment out the code in the line below this (with your chosen lags)
+# initial_lags <- c(1, 4)
+
 # Create the count file
 source(paste0(parent_dir, "/code/3_create_count_file.R"))
 
