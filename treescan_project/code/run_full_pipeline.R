@@ -133,7 +133,24 @@ if (lag_choice == 1){
     eval(parse(text = new_line))
 
     # We will set the initial lags to be 1 and 4
-    initial_lags <- c(1, 4)
+    initial_lags <- c(1,4)
+    
+    # We also need to update the 2.2 script to reflect new choice
+    script_path2 <- paste0(parent_dir, "/code/2.2_pick_lags.R")
+    
+    # Build replacement line 2
+    new_line2 <- paste0("initial_lags <- c(", input, ")")
+    
+    # Read script 2
+    lines2 <- readLines(script_path2)
+    
+    # Replace target line 2
+    lines2[2] <- new_line2
+    
+    # Save script
+    writeLines(lines2, script_path2)
+    
+    eval(parse(text = new_line2))
   }
   
   # This will update this accordingly after looking at the plot
