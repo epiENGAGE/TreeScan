@@ -223,16 +223,16 @@ year_dfs <- lapply(files, function(f) {
 archive_deduped <- rbind(year_dfs[[1]], year_dfs[[2]], year_dfs[[3]], year_dfs[[4]])
 ed1 <- year_dfs[[1]]
 ed1$date <- as.Date(ed1$C_Visit_Date_Time)
-ed1 <- ed1[,c("date","Hospital","DischargeDiagnosis","DischargeDisposition")]
+ed1 <- ed1[,c("date","Hospital","DischargeDiagnosis","DischargeDisposition","HasBeenAdmitted")]
 ed2 <- year_dfs[[2]]
 ed2$date <- as.Date(ed2$C_Visit_Date_Time)
-ed2 <- ed2[,c("date","Hospital","DischargeDiagnosis","DischargeDisposition")]
+ed2 <- ed2[,c("date","Hospital","DischargeDiagnosis","DischargeDisposition","HasBeenAdmitted")]
 ed3 <- year_dfs[[3]]
 ed3$date <- as.Date(ed3$C_Visit_Date_Time)
-ed3 <- ed3[,c("date","Hospital","DischargeDiagnosis","DischargeDisposition")]
+ed3 <- ed3[,c("date","Hospital","DischargeDiagnosis","DischargeDisposition","HasBeenAdmitted")]
 ed4 <- year_dfs[[4]]
 ed4$date <- as.Date(ed4$C_Visit_Date_Time)
-ed4 <- ed4[,c("date","Hospital","DischargeDiagnosis","DischargeDisposition")]
+ed4 <- ed4[,c("date","Hospital","DischargeDiagnosis","DischargeDisposition","HasBeenAdmitted")]
 
 ed <- rbind(ed1,ed2,ed3,ed4)
     
@@ -323,6 +323,13 @@ archive_deduped$travelhistory <- archive_deduped$Travel_History
 # archive_deduped$triagenote <- archive_deduped$TriageNotesOrig
 archive_deduped$age <- archive_deduped$Age                                                                                                                            
 archive_deduped$dischargedate <- archive_deduped$Discharge_Date_Time
+
+# I think dispo was wrong column; this one does it consistent with script 1
+archive_deduped$dispo <- ifelse(
+  archive_deduped$HasBeenAdmitted == "1",
+  "A",
+  "V"
+)
 
 # derive age_group from age using the bins expected later in the script
 archive_deduped$age_group <- cut(
@@ -474,12 +481,41 @@ modzcta$geom_ymin <- modzcta_feature_bbox[, "ymin"]
 modzcta$geom_xmax <- modzcta_feature_bbox[, "xmax"]
 modzcta$geom_ymax <- modzcta_feature_bbox[, "ymax"]
 
+SIGNALS <- TS_Results_all[, 2]
+
+df <- data.frame(signal = SIGNALS)
+
+df$prefix <- sub("-.*", "", df$signal)
+df$icd10  <- sub("^[12]-", "", df$signal)
+
+result <- aggregate(
+  prefix ~ icd10,
+  data = df,
+  FUN = function(x) paste(sort(unique(x)), collapse = ",")
+)
+
+prefix_lookup <- setNames(result$prefix, result$icd10)
+
+only_1 <- valid_nodes %in% names(prefix_lookup) & prefix_lookup[valid_nodes] == "1"
+
+# I want to save another version so that we can edit easily without
+# changing a lot of the code
+# This is so we can edit it below but still keep the original safe
+ARCHIVE_DEDUPED <- archive_deduped
+
 # For cluster and baseline linelist if you want to determine which are incident vs non-incident, you will also need to use v2 (this is the study dataset where we only kept incident diagnoses)
 # This has "date", "key", "dispo", "code" (in that order)
 for(i in 1:length(valid_nodes))
 {
   print(i)
   print(valid_nodes[i])
+  
+  # Recreate archive deduped
+  archive_deduped <- ARCHIVE_DEDUPED
+  
+  if (isTRUE(only_1[i])){
+    archive_deduped <- archive_deduped[which(archive_deduped$HasBeenAdmitted == 1), ]
+  }
   
   node_codes <- valid_nodes[i]
   node_codes <- gsub("\\.", "", node_codes)
