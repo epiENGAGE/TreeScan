@@ -483,14 +483,14 @@ modzcta$geom_ymax <- modzcta_feature_bbox[, "ymax"]
 
 SIGNALS <- TS_Results_all[, 2]
 
-df <- data.frame(signal = SIGNALS)
+df22 <- data.frame(signal = SIGNALS)
 
-df$prefix <- sub("-.*", "", df$signal)
-df$icd10  <- sub("^[12]-", "", df$signal)
+df22$prefix <- sub("-.*", "", df22$signal)
+df22$icd10  <- sub("^[12]-", "", df22$signal)
 
 result <- aggregate(
   prefix ~ icd10,
-  data = df,
+  data = df22,
   FUN = function(x) paste(sort(unique(x)), collapse = ",")
 )
 
