@@ -87,6 +87,10 @@ if (isTRUE(first_time)){
 # Run the script that locates treescan
 source(paste0(parent_dir, "/code/0_locate_treescan.R"))
 
+# Do you need to refresh your password?
+# Maybe you updated or changed it recently 
+password_refresh <- TRUE
+
 # Run the script that downloads the required data
 source(paste0(parent_dir, "/code/1_download_data.R"))
 
