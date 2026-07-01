@@ -94,7 +94,7 @@ for (lag in initial_lags){
   
   print(Nodes)
 }
-  
+
 TS_Results_today <- TS_Results_all
 
 is_related_icd10 <- function(a, b) {
@@ -141,6 +141,24 @@ TS_Results_today <- TS_Results_today %>%
   ) %>%
   filter(node_clean %in% filtered_nodes) %>%
   distinct(node_clean, .keep_all = TRUE)
+
+# Load CSV
+cause_file <- read.csv(paste0(parent_dir, "/data/Common_cause.csv"), stringsAsFactors = FALSE)
+
+# Function: if a node is a group/category in column X1,
+# replace it with all rows whose parent is that node in X2.
+expand_node <- function(node, lookup_df) {
+  children <- lookup_df$X1[lookup_df$X2 == node]
+  
+  if (length(children) > 0) {
+    return(children)
+  } else {
+    return(node)
+  }
+}
+
+# Apply to all nodes
+filtered_nodes <- unlist(lapply(filtered_nodes, expand_node, lookup_df = cause_file))
 
 # Reload just in case
 load(file.path(parent_dir, "myProfile.rda"))
@@ -320,7 +338,7 @@ archive_deduped$age_group <- as.character(archive_deduped$age_group)
 v2 <- read.csv(paste0(parent_dir, "/data/v2/", final_date, "/lag", lag, ".csv"))
 
 # Common cause (these are for the dummy nodes that link different parts of the tree)
-common_cause <- read.csv(paste0(parent_dir, "/data/common cause file final.csv"))
+common_cause <- read.csv(paste0(parent_dir, "/data/Common_cause.csv"))
 common_cause <- common_cause[is.na(common_cause$X4)==F,]
 
 # check if any of the signals are for dummy node and if any, add the different linked nodes to the identifier value separated by "|"
@@ -386,6 +404,75 @@ match_date_archive <- !is.na(archive_date)
 match_date_v2 <- !is.na(v2_date)
 
 window_starts <- as.Date(TS_Results_today$Time.Window.Start)
+
+# ------------------------------------------------------------
+# Hospital ZIP lookup for maps
+# Build once outside the signal loop because it is not node-specific
+# ------------------------------------------------------------
+
+possible_hosp_zip_cols <- c(
+  "HospitalZip",
+  "Hospital_Zip",
+  "HospitalZIP",
+  "Hospital_ZIP",
+  "FacilityZip",
+  "Facility_Zip"
+)
+
+hosp_zip_col <- possible_hosp_zip_cols[
+  possible_hosp_zip_cols %in% names(archive_deduped)
+][1]
+
+if (is.na(hosp_zip_col)) {
+  stop("No hospital ZIP column found in archive_deduped. Run names(archive_deduped) and check the hospital ZIP field name.")
+}
+
+if (!"hospital" %in% names(archive_deduped)) {
+  archive_deduped$hospital <- archive_deduped$HospitalName
+}
+
+hospital_zip_lookup_raw <- archive_deduped[, c("hospital", hosp_zip_col)]
+names(hospital_zip_lookup_raw) <- c("hospital", "hospital_zip_map")
+
+hospital_zip_lookup_raw$hospital <- as.character(hospital_zip_lookup_raw$hospital)
+hospital_zip_lookup_raw$hospital_zip_map <- substr(
+  as.character(hospital_zip_lookup_raw$hospital_zip_map),
+  1,
+  5
+)
+
+hospital_zip_lookup_raw <- hospital_zip_lookup_raw[
+  !is.na(hospital_zip_lookup_raw$hospital) &
+    hospital_zip_lookup_raw$hospital != "" &
+    !is.na(hospital_zip_lookup_raw$hospital_zip_map) &
+    hospital_zip_lookup_raw$hospital_zip_map != "",
+  ,
+  drop = FALSE
+]
+
+# One ZIP per hospital: use most frequent ZIP per hospital
+hospital_zip_lookup <- hospital_zip_lookup_raw %>%
+  dplyr::count(hospital, hospital_zip_map, name = "n") %>%
+  dplyr::arrange(hospital, dplyr::desc(n)) %>%
+  dplyr::group_by(hospital) %>%
+  dplyr::slice(1) %>%
+  dplyr::ungroup() %>%
+  dplyr::select(hospital, hospital_zip_map)
+
+# ------------------------------------------------------------
+# Fast bbox index for MODZCTA polygons
+# Build once outside the signal loop
+# ------------------------------------------------------------
+
+modzcta_feature_bbox <- do.call(
+  rbind,
+  lapply(sf::st_geometry(modzcta), sf::st_bbox)
+)
+
+modzcta$geom_xmin <- modzcta_feature_bbox[, "xmin"]
+modzcta$geom_ymin <- modzcta_feature_bbox[, "ymin"]
+modzcta$geom_xmax <- modzcta_feature_bbox[, "xmax"]
+modzcta$geom_ymax <- modzcta_feature_bbox[, "ymax"]
 
 # For cluster and baseline linelist if you want to determine which are incident vs non-incident, you will also need to use v2 (this is the study dataset where we only kept incident diagnoses)
 # This has "date", "key", "dispo", "code" (in that order)
@@ -623,132 +710,472 @@ for(i in 1:length(valid_nodes))
     
     dev.off()
     
+    # ------------------------------------------------------------
+    # Temporal cluster observed/expected bar plot
+    # ------------------------------------------------------------
+    
+    temporal <- read.csv(
+      paste0(
+        parent_dir,
+        "/results/",
+        final_date,
+        "/Results_lag",
+        lag,
+        "_",
+        final_date,
+        ".temporal.csv"
+      ),
+      check.names = FALSE
+    )
+    
+    temporal$Node.clean <- sub("^[^-]+-", "", temporal[["Node ID"]])
+    
+    matching_clusters <- unique(
+      temporal$Cluster[temporal$Node.clean == valid_nodes[i]]
+    )
+    
+    if (length(matching_clusters) > 0) {
+      
+      temporal2 <- temporal[temporal$Cluster %in% matching_clusters, , drop = FALSE]
+      temporal2$Date <- as.Date(temporal2$Date)
+      temporal2 <- temporal2[order(temporal2$Date), , drop = FALSE]
+      
+      temporal_trend <- tempfile(fileext = ".png")
+      
+      png(temporal_trend, width = 1600, height = 600, res = 150)
+      
+      dates <- temporal2$Date
+      
+      bar_cols <- ifelse(temporal2[["In Cluster"]] == 0, "white", "grey70")
+      
+      op <- par(mar = c(8, 5, 4, 2) + 0.1)
+      
+      bp <- barplot(
+        height = temporal2[["Observed (Inside Cluster)"]],
+        col = bar_cols,
+        border = "black",
+        names.arg = rep("", length(dates)),
+        xlab = "",
+        ylab = "Number of cases",
+        ylim = c(0, max(
+          temporal2[["Observed (Inside Cluster)"]],
+          temporal2[["Expected (Inside Cluster)"]],
+          na.rm = TRUE
+        ) * 1.15)
+      )
+      
+      lines(
+        x = bp,
+        y = temporal2[["Expected (Inside Cluster)"]],
+        type = "l",
+        lwd = 2
+      )
+      
+      tick_idx <- seq(1, length(dates), by = 7)
+      
+      axis(
+        side = 1,
+        at = bp[tick_idx],
+        labels = dates[tick_idx],
+        las = 2
+      )
+      
+      legend(
+        "top",
+        inset = -0.08,
+        legend = c("Observed, outside cluster", "Observed, in cluster", "Expected"),
+        fill = c("white", "grey70", NA),
+        border = c("black", "black", NA),
+        lty = c(NA, NA, 1),
+        lwd = c(NA, NA, 2),
+        horiz = TRUE,
+        bty = "n",
+        xpd = NA
+      )
+      
+      par(op)
+      dev.off()
+      
+    } else {
+      
+      temporal_trend <- NULL
+      
+    }
+    
+    # ------------------------------------------------------------
     # Maps for cluster and baseline
+    # Replacement version:
+    #   1) Hospital ZIP - Cluster
+    #   2) Patient ZIP  - Cluster
+    #   3) Hospital ZIP - Baseline
+    #   4) Patient ZIP  - Baseline
+    #
+    # This section only CREATES the four plot objects.
+    # The Excel insertion section later must save/insert:
+    #   p_hosp_cluster
+    #   p_patient_cluster
+    #   p_hosp_baseline
+    #   p_patient_baseline
+    # ------------------------------------------------------------
+    
+    
+    # ------------------------------------------------------------
+    # Helper: count records by MODZCTA from a ZIP column
+    # ------------------------------------------------------------
+    count_modzcta <- function(dat, zip_col, lookup_df) {
+      
+      if (!zip_col %in% names(dat)) {
+        stop(paste("Column", zip_col, "not found in data."))
+      }
+      
+      z <- substr(as.character(dat[[zip_col]]), 1, 5)
+      
+      tmp <- data.frame(
+        zipcode = z,
+        stringsAsFactors = FALSE
+      )
+      
+      tmp <- merge(
+        tmp,
+        lookup_df[, c("zipcode", "MODZCTA20")],
+        by = "zipcode",
+        all.x = TRUE
+      )
+      
+      tmp <- tmp[
+        !is.na(tmp$MODZCTA20) &
+          tmp$MODZCTA20 != "",
+        ,
+        drop = FALSE
+      ]
+      
+      if (nrow(tmp) > 0) {
+        out <- as.data.frame(
+          table(tmp$MODZCTA20),
+          stringsAsFactors = FALSE
+        )
+        
+        names(out) <- c("modzcta", "Freq")
+        out$pct <- round(out$Freq / sum(out$Freq), 4)
+      } else {
+        out <- data.frame(
+          modzcta = character(),
+          Freq = integer(),
+          pct = numeric(),
+          stringsAsFactors = FALSE
+        )
+      }
+      
+      out$modzcta <- as.character(out$modzcta)
+      out
+    }
+    
+    
+    # ------------------------------------------------------------
+    # Helper: bbox from only MODZCTAs with data
+    # ------------------------------------------------------------
+    get_data_bbox <- function(count_df, modzcta_sf) {
+      
+      data_modzctas <- as.character(count_df$modzcta[!is.na(count_df$pct)])
+      data_modzctas <- data_modzctas[
+        !is.na(data_modzctas) &
+          data_modzctas != ""
+      ]
+      
+      data_area <- modzcta_sf %>%
+        dplyr::filter(modzcta %in% data_modzctas)
+      
+      if (nrow(data_area) == 0) {
+        return(NULL)
+      }
+      
+      sf::st_bbox(data_area)
+    }
+    
+    
+    # ------------------------------------------------------------
+    # Helper: crop sf object to bbox
+    # ------------------------------------------------------------
+    crop_to_bbox <- function(sf_obj, bb) {
+      
+      if (is.null(bb)) {
+        return(sf_obj[0, ])
+      }
+      
+      suppressWarnings(
+        sf::st_crop(sf_obj, bb)
+      )
+    }
+    
+    
+    # ------------------------------------------------------------
+    # Helper: calculate output dimensions matched to bbox
+    # This prevents huge blank space in coord_sf maps.
+    # ------------------------------------------------------------
+    bbox_dims <- function(bb, base_width = 6, min_height = 3, max_height = 8) {
+      
+      if (is.null(bb)) {
+        return(list(width = base_width, height = 5))
+      }
+      
+      x_range <- as.numeric(bb["xmax"] - bb["xmin"])
+      y_range <- as.numeric(bb["ymax"] - bb["ymin"])
+      
+      if (is.na(x_range) || x_range <= 0) x_range <- 1
+      if (is.na(y_range) || y_range <= 0) y_range <- 1
+      
+      mid_lat <- mean(c(as.numeric(bb["ymin"]), as.numeric(bb["ymax"])), na.rm = TRUE)
+      lon_correction <- cos(mid_lat * pi / 180)
+      if (is.na(lon_correction) || lon_correction <= 0) lon_correction <- 1
+      
+      height <- base_width * (y_range / (x_range * lon_correction))
+      height <- max(min_height, min(max_height, height))
+      
+      list(width = base_width, height = height)
+    }
+    
+    
+    # ------------------------------------------------------------
+    # Helper: make map
+    # Grey background + colored data polygons
+    # ------------------------------------------------------------
+    make_map <- function(background_sf, data_sf, title_txt, legend_txt, bb_use) {
+      
+      data_sf <- data_sf[
+        !is.na(data_sf$pct),
+        ,
+        drop = FALSE
+      ]
+      
+      if (nrow(data_sf) == 0 || is.null(bb_use)) {
+        return(
+          ggplot() +
+            theme_void() +
+            labs(title = paste(title_txt, "- No mapped ZIP data"))
+        )
+      }
+      
+      ggplot() +
+        geom_sf(
+          data = background_sf,
+          fill = "grey95",
+          color = "white",
+          size = 0.1
+        ) +
+        geom_sf(
+          data = data_sf,
+          aes(fill = pct),
+          color = "white",
+          size = 0.1
+        ) +
+        scale_fill_viridis_c(
+          option = "plasma",
+          name = legend_txt,
+          labels = label_number(accuracy = 0.001)
+        ) +
+        coord_sf(
+          xlim = c(bb_use["xmin"], bb_use["xmax"]),
+          ylim = c(bb_use["ymin"], bb_use["ymax"]),
+          expand = FALSE,
+          clip = "on",
+          lims_method = "geometry_bbox"
+        ) +
+        theme_minimal() +
+        theme(
+          plot.margin = margin(2, 2, 2, 2),
+          panel.spacing = unit(0, "pt")
+        ) +
+        labs(title = title_txt)
+    }
+    
+    
+    if ("hospital_zip_map" %in% names(temp)) {
+      temp$hospital_zip_map <- NULL
+    }
+    
+    if ("hospital_zip_map" %in% names(temp1)) {
+      temp1$hospital_zip_map <- NULL
+    }
+    
+    temp <- merge(
+      temp,
+      hospital_zip_lookup,
+      by = "hospital",
+      all.x = TRUE,
+      sort = FALSE
+    )
+    
+    temp1 <- merge(
+      temp1,
+      hospital_zip_lookup,
+      by = "hospital",
+      all.x = TRUE,
+      sort = FALSE
+    )
+    
     temp$zipcode <- substr(as.character(temp$zipcode), 1, 5)
     temp1$zipcode <- substr(as.character(temp1$zipcode), 1, 5)
     
-    temp_z <- merge(temp, df[, c("zipcode", "MODZCTA20")], by = "zipcode", all.x = TRUE)
-    temp_z <- temp_z[!is.na(temp_z$MODZCTA20) & temp_z$MODZCTA20 != "", , drop = FALSE]
+    temp$hospital_zip_map <- substr(as.character(temp$hospital_zip_map), 1, 5)
+    temp1$hospital_zip_map <- substr(as.character(temp1$hospital_zip_map), 1, 5)
     
-    if (nrow(temp_z) > 0) {
-      temp_z <- as.data.frame(table(temp_z$MODZCTA20), stringsAsFactors = FALSE)
-      names(temp_z) <- c("modzcta", "Freq")
-      temp_z$pct <- round(temp_z$Freq / sum(temp_z$Freq), 4)
-    } else {
-      temp_z <- data.frame(
-        modzcta = character(),
-        Freq = integer(),
-        pct = numeric(),
-        stringsAsFactors = FALSE
-      )
-    }
-    
-    temp1_z <- merge(temp1, df[, c("zipcode", "MODZCTA20")], by = "zipcode", all.x = TRUE)
-    temp1_z <- temp1_z[!is.na(temp1_z$MODZCTA20) & temp1_z$MODZCTA20 != "", , drop = FALSE]
-    
-    if (nrow(temp1_z) > 0) {
-      temp1_z <- as.data.frame(table(temp1_z$MODZCTA20), stringsAsFactors = FALSE)
-      names(temp1_z) <- c("modzcta", "Freq")
-      temp1_z$pct <- round(temp1_z$Freq / sum(temp1_z$Freq), 4)
-    } else {
-      temp1_z <- data.frame(
-        modzcta = character(),
-        Freq = integer(),
-        pct = numeric(),
-        stringsAsFactors = FALSE
-      )
-    }
-    
-    temp_z$modzcta <- as.character(temp_z$modzcta)
-    temp1_z$modzcta <- as.character(temp1_z$modzcta)
     modzcta$modzcta <- as.character(modzcta$modzcta)
     
-    # Use HospitalZip to define the map zoom area
-    hospital_zip <- unique(na.omit(substr(as.character(temp$HospitalZip), 1, 5)))
     
-    hospital_area <- modzcta %>%
-      filter(modzcta %in% hospital_zip)
+    # ------------------------------------------------------------
+    # Build count tables
+    # ------------------------------------------------------------
     
-    if (nrow(hospital_area) > 0) {
-      bb_hosp <- sf::st_bbox(hospital_area)
+    cluster_hosp_counts <- count_modzcta(
+      temp,
+      "hospital_zip_map",
+      df
+    )
+    
+    cluster_patient_counts <- count_modzcta(
+      temp,
+      "zipcode",
+      df
+    )
+    
+    baseline_hosp_counts <- count_modzcta(
+      temp1,
+      "hospital_zip_map",
+      df
+    )
+    
+    baseline_patient_counts <- count_modzcta(
+      temp1,
+      "zipcode",
+      df
+    )
+    
+    
+    # ------------------------------------------------------------
+    # Join counts to MODZCTA geometry
+    # ------------------------------------------------------------
+    
+    map_cluster_hosp <- left_join(
+      modzcta,
+      cluster_hosp_counts,
+      by = "modzcta"
+    )
+    
+    map_cluster_patient <- left_join(
+      modzcta,
+      cluster_patient_counts,
+      by = "modzcta"
+    )
+    
+    map_baseline_hosp <- left_join(
+      modzcta,
+      baseline_hosp_counts,
+      by = "modzcta"
+    )
+    
+    map_baseline_patient <- left_join(
+      modzcta,
+      baseline_patient_counts,
+      by = "modzcta"
+    )
+    
+    
+    # ------------------------------------------------------------
+    # Bboxes
+    # Hospital cluster map uses hospital cluster data only.
+    # Patient cluster map uses same hospital cluster bbox.
+    # Hospital baseline map uses hospital baseline data only.
+    # Patient baseline map uses same hospital baseline bbox.
+    # ------------------------------------------------------------
+    
+    bb_cluster_hosp <- get_data_bbox(
+      cluster_hosp_counts,
+      modzcta
+    )
+    
+    bb_baseline_hosp <- get_data_bbox(
+      baseline_hosp_counts,
+      modzcta
+    )
+    
+    cluster_dims <- bbox_dims(bb_cluster_hosp, base_width = 6)
+    baseline_dims <- bbox_dims(bb_baseline_hosp, base_width = 6)
+    
+    crop_to_bbox2 <- function(sf_obj, bb) {
       
-      # Add padding around the hospital ZIP so the plot is not too tightly cropped
-      xpad <- as.numeric(bb_hosp["xmax"] - bb_hosp["xmin"]) * 2
-      ypad <- as.numeric(bb_hosp["ymax"] - bb_hosp["ymin"]) * 2
+      if (is.null(bb)) {
+        return(sf_obj[0, ])
+      }
       
-      bb_hosp["xmin"] <- bb_hosp["xmin"] - xpad
-      bb_hosp["xmax"] <- bb_hosp["xmax"] + xpad
-      bb_hosp["ymin"] <- bb_hosp["ymin"] - ypad
-      bb_hosp["ymax"] <- bb_hosp["ymax"] + ypad
+      sf_obj[
+        sf_obj$geom_xmin <= as.numeric(bb["xmax"]) &
+          sf_obj$geom_xmax >= as.numeric(bb["xmin"]) &
+          sf_obj$geom_ymin <= as.numeric(bb["ymax"]) &
+          sf_obj$geom_ymax >= as.numeric(bb["ymin"]),
+        ,
+        drop = FALSE
+      ]
     }
     
-    modzcta1 <- left_join(modzcta, temp_z, by = "modzcta")
-    modzcta_plot <- modzcta1[!is.na(modzcta1$pct), ]
+    # ------------------------------------------------------------
+    # Crop grey backgrounds and data maps to exact bbox
+    # ------------------------------------------------------------
     
-    if (nrow(modzcta_plot) > 0) {
-      bb <- sf::st_bbox(modzcta_plot)
-      
-      p <- ggplot(modzcta1) +
-        geom_sf(aes(fill = pct), color = "white", size = 0.1) +
-        scale_fill_viridis_c(
-          option = "plasma",
-          name = "Cluster",
-          labels = label_number(accuracy = 0.001),
-          na.value = "grey95"
-        ) +
-        coord_sf(
-          xlim = if (exists("bb_hosp") && nrow(hospital_area) > 0) c(bb_hosp["xmin"], bb_hosp["xmax"]) else c(bb["xmin"], bb["xmax"]),
-          ylim = if (exists("bb_hosp") && nrow(hospital_area) > 0) c(bb_hosp["ymin"], bb_hosp["ymax"]) else c(bb["ymin"], bb["ymax"]),
-          expand = FALSE
-        ) +
-        theme_minimal() +
-        labs(title = paste("MODZCTA Choropleth Map for", node_codes, "cluster"))
-    } else {
-      p <- ggplot(modzcta1) +
-        geom_sf(aes(fill = pct), color = "white", size = 0.1) +
-        scale_fill_viridis_c(
-          option = "plasma",
-          name = "Cluster",
-          labels = label_number(accuracy = 0.001),
-          na.value = "grey95"
-        ) +
-        theme_minimal() +
-        labs(title = paste("MODZCTA Choropleth Map for", node_codes, "cluster"))
-    }
+    # cluster_background <- crop_to_bbox(modzcta, bb_cluster_hosp)
+    # baseline_background <- crop_to_bbox(modzcta, bb_baseline_hosp)
     
-    modzcta1 <- left_join(modzcta, temp1_z, by = "modzcta")
-    modzcta_plot1 <- modzcta1[!is.na(modzcta1$pct), ]
+    # map_cluster_hosp_cropped <- crop_to_bbox(map_cluster_hosp, bb_cluster_hosp)
+    # map_cluster_patient_cropped <- crop_to_bbox(map_cluster_patient, bb_cluster_hosp)
     
-    if (nrow(modzcta_plot1) > 0) {
-      bb1 <- sf::st_bbox(modzcta_plot1)
-      
-      p1 <- ggplot(modzcta1) +
-        geom_sf(aes(fill = pct), color = "white", size = 0.1) +
-        scale_fill_viridis_c(
-          option = "plasma",
-          name = "Baseline",
-          labels = label_number(accuracy = 0.001),
-          na.value = "grey95"
-        ) +
-        coord_sf(
-          xlim = c(bb1["xmin"], bb1["xmax"]),
-          ylim = c(bb1["ymin"], bb1["ymax"]),
-          expand = FALSE
-        ) +
-        theme_minimal() +
-        labs(title = paste("MODZCTA Choropleth Map for", node_codes, "baseline"))
-    } else {
-      p1 <- ggplot(modzcta1) +
-        geom_sf(aes(fill = pct), color = "white", size = 0.1) +
-        scale_fill_viridis_c(
-          option = "plasma",
-          name = "Baseline",
-          labels = label_number(accuracy = 0.001),
-          na.value = "grey95"
-        ) +
-        theme_minimal() +
-        labs(title = paste("MODZCTA Choropleth Map for", node_codes, "baseline"))
-    }
+    # map_baseline_hosp_cropped <- crop_to_bbox(map_baseline_hosp, bb_baseline_hosp)
+    # map_baseline_patient_cropped <- crop_to_bbox(map_baseline_patient, bb_baseline_hosp)
+    
+    cluster_background <- crop_to_bbox2(modzcta, bb_cluster_hosp)
+    baseline_background <- crop_to_bbox2(modzcta, bb_baseline_hosp)
+    
+    map_cluster_hosp_cropped <- crop_to_bbox2(map_cluster_hosp, bb_cluster_hosp)
+    map_cluster_patient_cropped <- crop_to_bbox2(map_cluster_patient, bb_cluster_hosp)
+    
+    map_baseline_hosp_cropped <- crop_to_bbox2(map_baseline_hosp, bb_baseline_hosp)
+    map_baseline_patient_cropped <- crop_to_bbox2(map_baseline_patient, bb_baseline_hosp)
+    
+    
+    # ------------------------------------------------------------
+    # Create 4 plot objects
+    # These are used later in the Excel Maps section.
+    # ------------------------------------------------------------
+    
+    p_hosp_cluster <- make_map(
+      cluster_background,
+      map_cluster_hosp_cropped,
+      paste("Hospital ZIP Map for", node_codes, "- Cluster"),
+      "Hospital Cluster",
+      bb_cluster_hosp
+    )
+    
+    p_patient_cluster <- make_map(
+      cluster_background,
+      map_cluster_patient_cropped,
+      paste("Patient ZIP Map for", node_codes, "- Cluster"),
+      "Patient Cluster",
+      bb_cluster_hosp
+    )
+    
+    p_hosp_baseline <- make_map(
+      baseline_background,
+      map_baseline_hosp_cropped,
+      paste("Hospital ZIP Map for", node_codes, "- Baseline"),
+      "Hospital Baseline",
+      bb_baseline_hosp
+    )
+    
+    p_patient_baseline <- make_map(
+      baseline_background,
+      map_baseline_patient_cropped,
+      paste("Patient ZIP Map for", node_codes, "- Baseline"),
+      "Patient Baseline",
+      bb_baseline_hosp
+    )
     
     # Other co-diagnoses codes - creating frequency tables for cluster and baseline
     process <- function(x) {
@@ -1389,24 +1816,119 @@ for(i in 1:length(valid_nodes))
     
     # Weekly trends
     addWorksheet(wb, "Trends")
-    insertImage(wb, sheet = "Trends", file = code_trend, startRow = 1, startCol = 1, width = 10, height = 6)
+    
+    insertImage(
+      wb,
+      sheet = "Trends",
+      file = code_trend,
+      startRow = 1,
+      startCol = 1,
+      width = 10,
+      height = 6,
+      units = "in"
+    )
+    
+    if (!is.null(temporal_trend)) {
+      insertImage(
+        wb,
+        sheet = "Trends",
+        file = temporal_trend,
+        startRow = 34,
+        startCol = 1,
+        width = 10,
+        height = 4,
+        units = "in"
+      )
+    }
     
     # Maps
     addWorksheet(wb, "Maps")
     
-    map_file <- tempfile(fileext = ".png")
-    map1_file <- tempfile(fileext = ".png")
-    ggsave(filename = map_file, plot = p, width = 6, height = 5, dpi = 300)
-    ggsave(filename = map1_file, plot = p1, width = 6, height = 5, dpi = 300)
+    map_hosp_cluster_file <- tempfile(fileext = ".png")
+    map_patient_cluster_file <- tempfile(fileext = ".png")
+    map_hosp_baseline_file <- tempfile(fileext = ".png")
+    map_patient_baseline_file <- tempfile(fileext = ".png")
     
-    insertImage(
-      wb, sheet = "Maps", file = map_file,
-      startRow = 1, startCol = 1, width = 6, height = 5, units = "in"
+    ggsave(
+      filename = map_hosp_cluster_file,
+      plot = p_hosp_cluster,
+      width = cluster_dims$width,
+      height = cluster_dims$height,
+      dpi = 300
     )
     
+    ggsave(
+      filename = map_patient_cluster_file,
+      plot = p_patient_cluster,
+      width = cluster_dims$width,
+      height = cluster_dims$height,
+      dpi = 300
+    )
+    
+    ggsave(
+      filename = map_hosp_baseline_file,
+      plot = p_hosp_baseline,
+      width = baseline_dims$width,
+      height = baseline_dims$height,
+      dpi = 300
+    )
+    
+    ggsave(
+      filename = map_patient_baseline_file,
+      plot = p_patient_baseline,
+      width = baseline_dims$width,
+      height = baseline_dims$height,
+      dpi = 300
+    )
+    
+    # Top row: Cluster
+    # Left = hospital ZIP cluster
     insertImage(
-      wb, sheet = "Maps", file = map1_file,
-      startRow = 1, startCol = 8, width = 6, height = 5, units = "in"
+      wb,
+      sheet = "Maps",
+      file = map_hosp_cluster_file,
+      startRow = 1,
+      startCol = 1,
+      width = cluster_dims$width,
+      height = cluster_dims$height,
+      units = "in"
+    )
+    
+    # Right = patient ZIP cluster
+    insertImage(
+      wb,
+      sheet = "Maps",
+      file = map_patient_cluster_file,
+      startRow = 1,
+      startCol = 8,
+      width = cluster_dims$width,
+      height = cluster_dims$height,
+      units = "in"
+    )
+    
+    # Bottom row: Baseline
+    # Left = hospital ZIP baseline
+    insertImage(
+      wb,
+      sheet = "Maps",
+      file = map_hosp_baseline_file,
+      startRow = 28,
+      startCol = 1,
+      width = baseline_dims$width,
+      height = baseline_dims$height,
+      units = "in"
+    )
+    
+    # Right = patient ZIP baseline
+    insertImage(
+      wb,
+      sheet = "Maps",
+      file = map_patient_baseline_file,
+      startRow = 28,
+      startCol = 8,
+      width = baseline_dims$width,
+      height = baseline_dims$height,
+      units = "in"
     )
     
     # Hospitals
@@ -1446,7 +1968,7 @@ for(i in 1:length(valid_nodes))
       saveWorkbook(
         wb,
         paste0(
-          parent_dir, "/signal_interpretation/", END_DATE, "_",
+          parent_dir, "/signal_interpretation/", final_Date, "_",
           gsub("\\|", "_", gsub("2\\-", "", node_codes)),
           ".xlsx"
         ),
@@ -1458,7 +1980,7 @@ for(i in 1:length(valid_nodes))
       saveWorkbook(
         wb,
         paste0(
-          parent_dir, "/signal_interpretation_subregion/", END_DATE, "_",
+          parent_dir, "/signal_interpretation_subregion/", final_date, "_",
           gsub("\\|", "_", gsub("2\\-", "", node_codes)),
           ".xlsx"
         ),

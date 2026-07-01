@@ -14,7 +14,7 @@ if (isTRUE(subregion)){
     as.Date()
   
   # What dates are we missing
-  missing_dates <- setdiff(subset_target_dates, dates_in_dir)
+  missing_dates <- as.Date(setdiff(subset_target_dates, dates_in_dir))
   
   # Now get 30 most recent dates as they were refreshed
   recent_30_dates <- seq.Date(subset_end_date - 29, subset_end_date, by = "day")
@@ -22,7 +22,7 @@ if (isTRUE(subregion)){
   # Now what dates need processing
   dates_to_process <- sort(unique(c(
     missing_dates,
-    recent_40_dates
+    recent_30_dates
   )))
   
   # Loop through only dates that need to be subset now
