@@ -20,9 +20,6 @@ suppressPackageStartupMessages({
 wc_start_date <- as.Date("2026-06-04")
 wc_end_date   <- as.Date("2026-07-31")
 
-wc_start_date <- as.Date("2026-05-26")
-wc_end_date   <- as.Date("2026-05-31")
-
 duplicate_exact_start_days <- 3L
 duplicate_close_branch_days <- 3L
 duplicate_same_code_detection_days <- 14L
