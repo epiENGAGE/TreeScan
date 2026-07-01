@@ -34,10 +34,23 @@ if (isTRUE(subregion)){
   )
 }
 
+safe_tmp <- paste0(parent_dir, "/Temp")
+dir.create(safe_tmp, showWarnings = FALSE, recursive = TRUE)
+
+unlink(
+  list.files(safe_tmp, full.names = TRUE, recursive = TRUE),
+  recursive = TRUE,
+  force = TRUE
+)
+
 # Join each chunked data together
 df_all <- as.data.frame(rbindlist(
   lapply(files_from_dates, function(f) {
-    fread(f, colClasses = list(character = "C_Visit_Date_Time"))
+    fread(
+      file = f,
+      colClasses = list(character = "C_Visit_Date_Time"),
+      tmpdir = safe_tmp
+    )
   }),
   use.names = TRUE,
   fill = FALSE

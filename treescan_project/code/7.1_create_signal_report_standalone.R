@@ -1,3 +1,216 @@
+# For epiEngage: Create Signal Linelists - Ramona Lall (3/9/2026)
+
+# Load required libraries
+library("sf")
+library("ggplot2")
+library("dplyr")
+library("scales")
+library("dplyr")
+library("readr")
+library("lubridate")
+library("MMWRweek")
+library("stringi")
+library("lubridate")
+library("openxlsx")
+library("stringr")
+
+# Helper functions for if we get bad characters
+normalize_text_utf8 <- function(x) {
+  x <- as.character(x)
+  
+  # First pass: mark declared encoding as UTF-8 where possible
+  x1 <- stringi::stri_enc_toutf8(x, is_unknown_8bit = TRUE, validate = TRUE)
+  
+  # Second pass: for anything still invalid, try common legacy encodings
+  bad <- !is.na(x1) & !stringi::stri_enc_isutf8(x1)
+  if (any(bad)) {
+    x1[bad] <- iconv(x[bad], from = "latin1", to = "UTF-8", sub = "byte")
+  }
+  
+  # Final cleanup: guarantee valid UTF-8 strings
+  x1 <- iconv(x1, from = "", to = "UTF-8", sub = "byte")
+  x1
+}
+
+normalize_for_tokens <- function(x) {
+  x <- normalize_text_utf8(x)
+  x <- stringi::stri_trans_general(x, "Latin-ASCII")
+  x <- gsub("[[:punct:]]", " ", x, perl = TRUE)
+  x <- toupper(x)
+  x
+}
+
+# We want to keep track of all valid nodes
+all_valid_nodes <- c()
+
+Nodes <- c()
+
+TS_Results_all <- data.frame(
+  Cut.No. = integer(),
+  Node.Identifier = character(),
+  Node.Name = character(),
+  Tree.Level = integer(),
+  Node.Cases = integer(),
+  Time.Window.Start = character(),
+  Time.Window.End = character(),
+  Cases.in.Window = integer(),
+  Expected.Cases = numeric(),
+  Relative.Risk = numeric(),
+  Excess.Cases = numeric(),
+  Test.Statistic = numeric(),
+  P.value = numeric(),
+  Recurrence.Interval = numeric(),
+  Parent.Node = character(),
+  Parent.Node.Name = character(),
+  Branch.Order = integer(),
+  stringsAsFactors = FALSE,
+  check.names = FALSE
+)
+
+nodes_w_dash <- c()
+
+for (lag in initial_lags){
+  
+  # Get required nodes
+  
+  if (!isTRUE(subregion)){
+    # Read in Results csv file (edit to match naming convention)
+    TS_Results_today <- read.csv(paste0(parent_dir, "/results/", final_date, "/Results_lag", lag, "_", final_date, ".csv"))
+  } else {
+    TS_Results_today <- read.csv(paste0(parent_dir, "/results_subregion/", final_date, "/Results_lag", lag, "_", final_date, ".csv"))
+  }
+  
+  # Signal criteria
+  TS_Results_today <- TS_Results_today[is.na(TS_Results_today$Recurrence.Interval) == F, ]
+  TS_Results_today <- TS_Results_today[which(TS_Results_today$Relative.Risk>=1.3),]
+  # Admit signals have a lower threshold
+  TS_Results_today <- TS_Results_today[which((TS_Results_today$Recurrence.Interval >= 365)|(grepl("1\\-",TS_Results_today$Node.Identifier) & TS_Results_today$Recurrence.Interval>=100)),]
+  TS_Results_today$Node.Identifier=stri_replace_all_fixed(TS_Results_today$Node.Identifier, "\xa0", "")
+  
+  TS_Results_all <- rbind(TS_Results_all, TS_Results_today)
+  
+  Nodes <- unique(append(Nodes, sub(".*-", "", TS_Results_today[,2])))
+  nodes_w_dash <- unique(append(nodes_w_dash, TS_Results_today$Node.Identifier))
+  
+  print(Nodes)
+}
+
+TS_Results_today <- TS_Results_all
+
+is_related_icd10 <- function(a, b) {
+  # Remove dots so T83.511 and T83511 compare cleanly
+  a_clean <- gsub("\\.", "", a)
+  b_clean <- gsub("\\.", "", b)
+  
+  startsWith(a_clean, b_clean) || startsWith(b_clean, a_clean)
+}
+
+keep_strongest_branch_signals <- function(nodes) {
+  kept <- character()
+  
+  for (node in nodes) {
+    # only apply this logic to ICD-10-like codes
+    is_icd <- grepl("^[A-Z][0-9]", node)
+    
+    if (!is_icd) {
+      kept <- c(kept, node)
+      next
+    }
+    
+    already_represented <- any(vapply(
+      kept,
+      function(k) {
+        grepl("^[A-Z][0-9]", k) && is_related_icd10(node, k)
+      },
+      logical(1)
+    ))
+    
+    if (!already_represented) {
+      kept <- c(kept, node)
+    }
+  }
+  
+  kept
+}
+
+filtered_nodes <- keep_strongest_branch_signals(Nodes)
+
+TS_Results_today <- TS_Results_today %>%
+  mutate(
+    node_clean = str_remove(Node.Identifier, "^[0-9]+-")
+  ) %>%
+  filter(node_clean %in% filtered_nodes) %>%
+  distinct(node_clean, .keep_all = TRUE)
+
+# Load CSV
+cause_file <- read.csv(paste0(parent_dir, "/data/Common_cause.csv"), stringsAsFactors = FALSE)
+
+# Function: if a node is a group/category in column X1,
+# replace it with all rows whose parent is that node in X2.
+expand_node <- function(node, lookup_df) {
+  children <- lookup_df$X1[lookup_df$X2 == node]
+  
+  if (length(children) > 0) {
+    return(children)
+  } else {
+    return(node)
+  }
+}
+
+# Apply to all nodes
+filtered_nodes <- unlist(lapply(filtered_nodes, expand_node, lookup_df = cause_file))
+
+# Reload just in case
+load(file.path(parent_dir, "myProfile.rda"))
+
+# Load required libraries
+library(Rnssp)
+library(dplyr)
+library(lubridate)
+library(readr)
+
+# Where we save these files temporarily
+out_dir2 <- file.path(parent_dir, "data_for_interpretation")
+dir.create(out_dir2, recursive = TRUE, showWarnings = FALSE)
+
+# Get the data in the way ESSENCE API wants
+fmt_essence_date <- function(x) {
+  x <- as.Date(x)
+  paste0(as.integer(format(x, "%d")), format(x, "%b%Y"))
+}
+
+# Get nodes formatted correctly
+fmt_node <- function(Nodes, op = "OR") {
+  expr <- paste0("%5E", Nodes, "%5E", collapse = paste0(",", op, ","))
+  paste0("&dischargeDiagnosis=", expr)
+}
+
+# We need to make sure what nodes are actually valid first and then format the API url
+# Function to normalize node codes (remove prefixes and periods)
+clean_node <- function(x) {
+  x <- trimws(as.character(x))
+  x <- gsub("^(0-|1-|2-)", "", x)  # Remove TreeScan prefixes
+  x <- gsub("\\.", "", x)          # Remove decimal points
+  toupper(x)
+}
+
+# Load the TreeScan ICD-10 tree file
+tree_path <- file.path(parent_dir, "data", "Tree_File_2026_wide_format.txt")
+icd10_tree <- read.delim(tree_path, stringsAsFactors = FALSE, check.names = FALSE)
+
+# Identify columns that contain ICD-10 node codes
+node_cols <- intersect(c("Name1", paste0("Level", 1:8)), names(icd10_tree))
+
+# Extract and clean all valid nodes from the tree
+valid_nodes <- unique(unlist(icd10_tree[, node_cols], use.names = FALSE))
+valid_nodes_clean <- clean_node(valid_nodes)
+
+# Clean the input Nodes vector
+nodes_clean <- clean_node(filtered_nodes)
+
+# Identify valid nodes
+valid_nodes <- filtered_nodes[(nodes_clean %in% valid_nodes_clean)]
+
 # Load required libraries
 library(data.table)
 library(stringi)
@@ -376,7 +589,7 @@ if (length(unique(valid_nodes)) > 0) {
         "NO"
       )
     ) %>%
-   dplyr::select(
+    dplyr::select(
       Node.Identifier,
       artifact_score,
       `Data artifact warning`,

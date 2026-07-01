@@ -8,10 +8,12 @@ out_dir <- file.path(parent_dir, "raw_data")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
 # To do once, or when password changes
-if (isTRUE(first_time)) {
+if (isTRUE(first_time) || isTRUE(password_refresh)) {
   myProfile <- create_profile()
   save(myProfile, file = file.path(parent_dir, "myProfile.rda"))
 }
+
+
 
 load(file.path(parent_dir, "myProfile.rda"))
 

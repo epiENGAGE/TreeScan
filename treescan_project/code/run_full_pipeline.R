@@ -49,6 +49,10 @@ reassess <- TRUE
 # leave as Sys.Date() if you want to do treescan in real time
 final_date <- Sys.Date()
 
+# Do you need to refresh your password?
+# Maybe you updated or changed it recently 
+password_refresh <- TRUE
+
 # Is it a new month?
 # If so then set to true.
 # Also set to true if you want to re-assess the lag situation
@@ -125,7 +129,7 @@ if (lag_choice == 1){
     lines <- readLines(script_path)
     
     # Replace target line
-    lines[136] <- new_line
+    lines[140] <- new_line
     
     # Save script
     writeLines(lines, script_path)
@@ -133,7 +137,24 @@ if (lag_choice == 1){
     eval(parse(text = new_line))
 
     # We will set the initial lags to be 1 and 4
-    initial_lags <- c(1, 4)
+    initial_lags <- c(1,4)
+    
+    # We also need to update the 2.2 script to reflect new choice
+    script_path2 <- paste0(parent_dir, "/code/2.2_pick_lags.R")
+    
+    # Build replacement line 2
+    new_line2 <- paste0("initial_lags <- c(", input, ")")
+    
+    # Read script 2
+    lines2 <- readLines(script_path2)
+    
+    # Replace target line 2
+    lines2[2] <- new_line2
+    
+    # Save script
+    writeLines(lines2, script_path2)
+    
+    eval(parse(text = new_line2))
   }
   
   # This will update this accordingly after looking at the plot
@@ -143,6 +164,10 @@ if (lag_choice == 1){
 source(paste0(parent_dir, "/code/2.4_data_artifact_check.R"))
 
 # If you are running not in real time, then you likely don't want to run on multiple lags
+
+# If you just want to set initial_lags manually without using the automated approach
+# Then uncomment out the code in the line below this (with your chosen lags)
+# initial_lags <- c(1, 4)
 
 # Create the count file
 source(paste0(parent_dir, "/code/3_create_count_file.R"))
@@ -158,3 +183,6 @@ source(paste0(parent_dir, "/code/6_create_signal_linelist.R"))
 
 # Now generate the signal report
 source(paste0(parent_dir, "/code/7_create_signal_report.R"))
+
+# Now Run WC review code
+source(paste0(parent_dir, "/code/8_WC_signal_review.R"))
