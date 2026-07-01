@@ -183,3 +183,6 @@ source(paste0(parent_dir, "/code/6_create_signal_linelist.R"))
 
 # Now generate the signal report
 source(paste0(parent_dir, "/code/7_create_signal_report.R"))
+
+# Now Run WC review code
+source(paste0(parent_dir, "/code/8_WC_signal_review.R"))
