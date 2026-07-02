@@ -67,14 +67,14 @@ node_code <- fmt_node(valid_nodes)
 build_url <- function(start_date, end_date, diagnosis_code = node_code) {
   paste0(
     "https://essence.syndromicsurveillance.org/nssp_essence/api/dataDetails/csv?",
-    "datasource=va_er",
+    "datasource=va_hosp",
     "&startDate=", fmt_essence_date(start_date),
     "&medicalGroupingSystem=essencesyndromes",
     "&userId=8230",
     "&endDate=", fmt_essence_date(end_date),
     "&percentParam=noPercent",
     "&aqtTarget=DataDetails",
-    "&geographySystem=region",
+    "&geographySystem=hospitalregion",
     "&detector=probrepswitch",
     "&timeResolution=daily",
     diagnosis_code,
