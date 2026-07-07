@@ -698,7 +698,7 @@ if (length(unique(valid_nodes)) > 0) {
         lwd = 2
       )
       
-      lines(A$x_days, A$y, lty = 2, col = "grey", lwd = 2)
+      lines(A$x_days, if (max(A$y, na.rm = TRUE) > 1) A$y / 100 else A$y, lty = 2, col = "grey", lwd = 2)
       
       x_frac <- seq(0, 5, length.out = length(frac))
       
