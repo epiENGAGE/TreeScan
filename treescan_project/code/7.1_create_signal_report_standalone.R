@@ -14,6 +14,8 @@ library("lubridate")
 library("openxlsx")
 library("stringr")
 
+sigs_maxout <- character()
+
 # Helper functions for if we get bad characters
 normalize_text_utf8 <- function(x) {
   x <- as.character(x)
