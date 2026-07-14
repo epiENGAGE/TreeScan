@@ -176,9 +176,7 @@ read_one_results <- function(analysis_date, lag) {
     "Time.Window.End",
     "Recurrence.Interval",
     "Relative.Risk",
-    "Excess.Cases",
-    "Cases",
-    "Expected.Cases"
+    "Excess.Cases"
   )
   
   x <- x %>%
