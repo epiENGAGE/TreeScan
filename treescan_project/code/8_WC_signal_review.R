@@ -108,7 +108,7 @@ ensure_reviewer_col_last <- function(x) {
   if (!reviewer_col %in% names(x)) {
     x[[reviewer_col]] <- NA_character_
   } else {
-    x[[reviewer_col]] <- as.character(x[[reviewviewer_col]])
+    x[[reviewer_col]] <- as.character(x[[reviewer_col]])
   }
 
   x %>%
@@ -204,14 +204,6 @@ read_one_results <- function(analysis_date, lag) {
   
   if ("Excess.Cases" %in% names(x)) {
     x$Excess.Cases <- suppressWarnings(as.numeric(x$Excess.Cases))
-  }
-  
-  if ("Cases" %in% names(x)) {
-    x$Cases <- suppressWarnings(as.numeric(x$Cases))
-  }
-  
-  if ("Expected.Cases" %in% names(x)) {
-    x$Expected.Cases <- suppressWarnings(as.numeric(x$Expected.Cases))
   }
   
   x %>%
