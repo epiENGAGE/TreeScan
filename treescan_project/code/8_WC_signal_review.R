@@ -35,6 +35,7 @@ wc_start_date <- as.Date("2026-06-04")
 wc_end_date   <- as.Date("2026-07-31")
 
 reviewer_col <- "reviewer_categorisation"
+reviewer_comments_col <- "reviewer_comments"
 
 results_root <- if (isTRUE(subregion)) {
   file.path(parent_dir, "results_subregion")
@@ -102,7 +103,7 @@ first_existing_col <- function(x, possible_names) {
   hit[1]
 }
 
-ensure_reviewer_col_last <- function(x) {
+ensure_reviewer_cols_last <- function(x) {
   if (is.null(x)) return(x)
 
   if (!reviewer_col %in% names(x)) {
@@ -111,8 +112,18 @@ ensure_reviewer_col_last <- function(x) {
     x[[reviewer_col]] <- as.character(x[[reviewer_col]])
   }
 
+  if (!reviewer_comments_col %in% names(x)) {
+    x[[reviewer_comments_col]] <- NA_character_
+  } else {
+    x[[reviewer_comments_col]] <- as.character(x[[reviewer_comments_col]])
+  }
+
   x %>%
-    select(-all_of(reviewer_col), all_of(reviewer_col))
+    select(
+      -any_of(c(reviewer_col, reviewer_comments_col)),
+      all_of(reviewer_col),
+      all_of(reviewer_comments_col)
+    )
 }
 
 drop_internal_columns <- function(x) {
@@ -149,7 +160,7 @@ read_existing_output <- function(path) {
     }
   }
   
-  ensure_reviewer_col_last(x)
+  ensure_reviewer_cols_last(x)
 }
 
 # -------------------------------------------------------------------------
@@ -383,10 +394,10 @@ write_tracker_workbook <- function(new_rows, path, existing_output = NULL) {
   new_rows <- new_rows %>%
     arrange(analysis_date, Node.Identifier, lag) %>%
     drop_internal_columns() %>%
-    ensure_reviewer_col_last()
+    ensure_reviewer_cols_last()
   
   if (!is.null(existing_output) && nrow(existing_output) > 0) {
-    existing_output <- ensure_reviewer_col_last(existing_output)
+    existing_output <- ensure_reviewer_cols_last(existing_output)
     
     all_cols <- union(names(existing_output), names(new_rows))
     
@@ -402,10 +413,10 @@ write_tracker_workbook <- function(new_rows, path, existing_output = NULL) {
       existing_output[, all_cols, drop = FALSE],
       new_rows[, all_cols, drop = FALSE]
     ) %>%
-      ensure_reviewer_col_last()
+      ensure_reviewer_cols_last()
   } else {
     combined_output <- new_rows %>%
-      ensure_reviewer_col_last()
+      ensure_reviewer_cols_last()
   }
   
   wb <- createWorkbook()
@@ -417,6 +428,30 @@ write_tracker_workbook <- function(new_rows, path, existing_output = NULL) {
     "new_signals_classified",
     combined_output,
     tableStyle = "TableStyleMedium2"
+  )
+
+    reviewer_options <- c(
+    "False positive",
+    "Seasonal increase",
+    "Acute event",
+    "Concerning",
+    "Unexplained"
+  )
+
+  reviewer_col_number <- match(
+    reviewer_col,
+    names(combined_output)
+  )
+
+  dataValidation(
+  wb,
+  sheet = "new_signals_classified",
+  cols = reviewer_col_number,
+  rows = 2:10000,
+  type = "list",
+  value = paste0('"', paste(reviewer_options, collapse = ","), '"'),
+  allowBlank = TRUE,
+  showErrorMsg = TRUE
   )
   
   freezePane(wb, "new_signals_classified", firstRow = TRUE, firstCol = TRUE)
