@@ -104,11 +104,13 @@ first_existing_col <- function(x, possible_names) {
 
 ensure_reviewer_col_last <- function(x) {
   if (is.null(x)) return(x)
-  
+
   if (!reviewer_col %in% names(x)) {
     x[[reviewer_col]] <- NA_character_
+  } else {
+    x[[reviewer_col]] <- as.character(x[[reviewviewer_col]])
   }
-  
+
   x %>%
     select(-all_of(reviewer_col), all_of(reviewer_col))
 }
