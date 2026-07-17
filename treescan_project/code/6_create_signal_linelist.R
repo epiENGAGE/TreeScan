@@ -525,6 +525,9 @@ for(i in 1:length(valid_nodes))
   dx_clean_archive <- gsub("\\.", "", archive_deduped$diagnosiscode1)
   archive_date <- as.Date(archive_deduped$date)
   match_date_archive <- !is.na(archive_date)
+
+  node_codes <- valid_nodes[i]
+  node_codes <- gsub("\\.", "", node_codes)
   
   ts_idx <- which(clean_node(TS_Results_today$Node.Identifier) == node_codes)[1]
   
