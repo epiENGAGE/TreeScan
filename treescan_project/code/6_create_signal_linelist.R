@@ -513,12 +513,18 @@ for(i in 1:length(valid_nodes))
   # Recreate archive deduped
   archive_deduped <- ARCHIVE_DEDUPED
   
-  if (isTRUE(only_1[i])){
-    archive_deduped <- archive_deduped[which(archive_deduped$HasBeenAdmitted == 1), ]
+  if (isTRUE(only_1[i])) {
+    archive_deduped <- archive_deduped[
+      archive_deduped$HasBeenAdmitted == 1,
+      ,
+      drop = FALSE
+    ]
   }
   
-  node_codes <- valid_nodes[i]
-  node_codes <- gsub("\\.", "", node_codes)
+  # IMPORTANT: these must be recalculated after archive_deduped is filtered
+  dx_clean_archive <- gsub("\\.", "", archive_deduped$diagnosiscode1)
+  archive_date <- as.Date(archive_deduped$date)
+  match_date_archive <- !is.na(archive_date)
   
   ts_idx <- which(clean_node(TS_Results_today$Node.Identifier) == node_codes)[1]
   
