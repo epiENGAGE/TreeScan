@@ -55,7 +55,7 @@ TS_Results_all <- data.frame(
   Time.Window.End = character(),
   Cases.in.Window = integer(),
   Expected.Cases = numeric(),
-  Relative.Risk = numeric(),
+  Odds.Ratio = numeric(),
   Excess.Cases = numeric(),
   Test.Statistic = numeric(),
   P.value = numeric(),
@@ -82,7 +82,7 @@ for (lag in initial_lags){
     
   # Signal criteria
   TS_Results_today <- TS_Results_today[is.na(TS_Results_today$Recurrence.Interval) == F, ]
-  TS_Results_today <- TS_Results_today[which(TS_Results_today$Relative.Risk>=1.3),]
+  TS_Results_today <- TS_Results_today[which(TS_Results_today$Odds.Ratio>=1.3),]
   # Admit signals have a lower threshold
   TS_Results_today <- TS_Results_today[which((TS_Results_today$Recurrence.Interval >= 365)|(grepl("1\\-",TS_Results_today$Node.Identifier) & TS_Results_today$Recurrence.Interval>=100)),]
   TS_Results_today$Node.Identifier=stri_replace_all_fixed(TS_Results_today$Node.Identifier, "\xa0", "")
