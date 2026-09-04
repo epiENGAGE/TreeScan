@@ -62,7 +62,7 @@ if (length(unique(valid_nodes)) > 0) {
     TS_Results_today <- TS_Results_today[is.na(TS_Results_today$Recurrence.Interval) == F, ]
     TS_Results_today <- TS_Results_today[which(TS_Results_today$Odds.Ratio>=1.3),]
     # Admit signals have a lower threshold
-    TS_Results_today <- TS_Results_today[which((TS_Results_today$Recurrence.Interval >= 365)|(grepl("1\\-",TS_Results_today$Node.Identifier) & TS_Results_today$Recurrence.Interval>=100)),]
+    TS_Results_today <- TS_Results_today[which((TS_Results_today$Recurrence.Interval >= (365 / frequency))|(grepl("1\\-",TS_Results_today$Node.Identifier) & TS_Results_today$Recurrence.Interval>=100)),]
     TS_Results_today$Node.Identifier=stri_replace_all_fixed(TS_Results_today$Node.Identifier, "\xa0", "")
     
     Nodes <- sub(".*-", "", TS_Results_today[,2])
@@ -275,9 +275,9 @@ if (length(unique(valid_nodes)) > 0) {
         is.na(yesterday_ri) ||
         length(non_missing_ri) == 0 ||
         (node1 && !is.na(yesterday_ri) && yesterday_ri < 100) ||
-        (!node1 && today_ri >= 365 &&
+        (!node1 && today_ri >= (365 / frequency) &&
          (
-           (!is.na(yesterday_ri) && yesterday_ri < 365) ||
+           (!is.na(yesterday_ri) && yesterday_ri < (365 / frequency)) ||
            (!is.na(yesterday_rr) && yesterday_rr < 1.3)
          )
         )
