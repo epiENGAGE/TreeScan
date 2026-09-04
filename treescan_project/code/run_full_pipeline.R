@@ -11,7 +11,7 @@ parent_dir <- gsub("\\\\", "/", parent_dir)
 base_dir <- dirname(parent_dir)
 
 # Is this your first time installing?
-first_time <- TRUE
+first_time <- FALSE
 
 # If you're on a server, uploading treescan download unzipped automatically
 # but still needs to install!
@@ -177,6 +177,11 @@ source(paste0(parent_dir, "/code/4_update_parameter_file.R"))
 
 # Run treescan
 source(paste0(parent_dir, "/code/5_run_treescan.R"))
+
+# How often do you run the analysis?
+# If you run once every x days then put x
+# Daily means 1, weekly means 7
+frequency <- 1
 
 # Run the linelist creation
 source(paste0(parent_dir, "/code/6_create_signal_linelist.R"))
