@@ -60,7 +60,7 @@ if (length(unique(valid_nodes)) > 0) {
     
     # Signal criteria
     TS_Results_today <- TS_Results_today[is.na(TS_Results_today$Recurrence.Interval) == F, ]
-    TS_Results_today <- TS_Results_today[which(TS_Results_today$Relative.Risk>=1.3),]
+    TS_Results_today <- TS_Results_today[which(TS_Results_today$Odds.Ratio>=1.3),]
     # Admit signals have a lower threshold
     TS_Results_today <- TS_Results_today[which((TS_Results_today$Recurrence.Interval >= 365)|(grepl("1\\-",TS_Results_today$Node.Identifier) & TS_Results_today$Recurrence.Interval>=100)),]
     TS_Results_today$Node.Identifier=stri_replace_all_fixed(TS_Results_today$Node.Identifier, "\xa0", "")
@@ -103,7 +103,7 @@ if (length(unique(valid_nodes)) > 0) {
     # -----------------------------
     # 1) Prepare today's signals
     # -----------------------------
-    TS_Results_today <- TS_Results_today[, c("Node.Identifier", "Node.Name", "Recurrence.Interval", "Relative.Risk")]
+    TS_Results_today <- TS_Results_today[, c("Node.Identifier", "Node.Name", "Recurrence.Interval", "Odds.Ratio")]
     
     # Fix node for dummy nodes
     dummy_idx <- grepl("\\|", TS_Results_today$Node.Identifier)
@@ -112,7 +112,7 @@ if (length(unique(valid_nodes)) > 0) {
     # Normalize types
     TS_Results_today$Node.Identifier <- trimws(as.character(TS_Results_today$Node.Identifier))
     TS_Results_today$Recurrence.Interval <- as.numeric(TS_Results_today$Recurrence.Interval)
-    TS_Results_today$Relative.Risk <- as.numeric(TS_Results_today$Relative.Risk)
+    TS_Results_today$Odds.Ratio <- as.numeric(TS_Results_today$Odds.Ratio)
     
     # -----------------------------
     # 2) Only pull prior 7 days
@@ -168,13 +168,13 @@ if (length(unique(valid_nodes)) > 0) {
       
       # temp <- temp[temp$Node.Identifier %in% TS_Results_today$Node.Identifier, , drop = FALSE]
       
-      keep_cols <- c("Node.Identifier", "Time.Window.End", "Recurrence.Interval", "Relative.Risk")
+      keep_cols <- c("Node.Identifier", "Time.Window.End", "Recurrence.Interval", "Odds.Ratio")
       temp <- temp[, keep_cols[keep_cols %in% names(temp)], drop = FALSE]
       
       file_dt <- sub(".*?(\\d{4}-\\d{2}-\\d{2}).*", "\\1", file)
       
       names(temp)[names(temp) == "Recurrence.Interval"] <- paste0("RI_", format(as.Date(file_dt), "%Y%m%d"))
-      names(temp)[names(temp) == "Relative.Risk"] <- paste0("RR_", format(as.Date(file_dt), "%Y%m%d"))
+      names(temp)[names(temp) == "Odds.Ratio"] <- paste0("RR_", format(as.Date(file_dt), "%Y%m%d"))
       
       temp <- temp[, c(
         "Node.Identifier",
@@ -207,7 +207,7 @@ if (length(unique(valid_nodes)) > 0) {
       "Node.Name",
       "Recurrence.Interval",
       ri_cols,
-      "Relative.Risk",
+      "Odds.Ratio",
       rr_cols
     )]
     
@@ -225,7 +225,7 @@ if (length(unique(valid_nodes)) > 0) {
       node1 <- grepl("^1\\-", node_id)
       
       today_ri <- suppressWarnings(as.numeric(data_row$Recurrence.Interval))
-      today_rr <- suppressWarnings(as.numeric(data_row$Relative.Risk))
+      today_rr <- suppressWarnings(as.numeric(data_row$Odds.Ratio))
       
       ri_cols <- grep("^RI_", names(data_row), value = TRUE)
       rr_cols <- grep("^RR_", names(data_row), value = TRUE)
@@ -394,7 +394,7 @@ if (length(unique(valid_nodes)) > 0) {
   value_cols <- c(
     "Recurrence.Interval",  # today's RI
     ri_cols,                # prior days' RI
-    "Relative.Risk",        # today's RR
+    "Odds.Ratio",        # today's RR
     rr_cols                 # prior days' RR
   )
   
@@ -490,7 +490,7 @@ if (length(unique(valid_nodes)) > 0) {
   
   all_names <- names(TS_Results_today)
   ri_idx <- which(grepl("^RI_|^Recurrence.Interval$", all_names))
-  rr_idx <- which(grepl("^RR_|^Relative.Risk$", all_names))
+  rr_idx <- which(grepl("^RR_|^Odds.Ratio$", all_names))
   
   artifact_score_col <- which(names(TS_Results_today) == "artifact_score")
   
