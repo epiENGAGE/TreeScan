@@ -5,14 +5,17 @@ library("sf")
 library("ggplot2")
 library("dplyr")
 library("scales")
-library("dplyr")
 library("readr")
 library("lubridate")
 library("MMWRweek")
 library("stringi")
-library("lubridate")
 library("openxlsx")
 library("stringr")
+library("data.table")
+
+# Set threads for larger joins and string transformations
+# For reproducibility, do not parallelize simulated chi-squared tests without controlling RNG
+setDTthreads(getOption("nssp.interpretation.dt_threads", 0L))
 
 # Helper functions for if we get bad characters
 normalize_text_utf8 <- function(x) {
@@ -69,6 +72,8 @@ TS_Results_all <- data.frame(
   
 nodes_w_dash <- c()
 
+TS_Results_parts <- list()
+
 for (lag in initial_lags){
   
   # Get required nodes
@@ -87,7 +92,7 @@ for (lag in initial_lags){
   TS_Results_today <- TS_Results_today[which((TS_Results_today$Recurrence.Interval >= (365 / frequency))|(grepl("1\\-",TS_Results_today$Node.Identifier) & TS_Results_today$Recurrence.Interval>=100)),]
   TS_Results_today$Node.Identifier=stri_replace_all_fixed(TS_Results_today$Node.Identifier, "\xa0", "")
   
-  TS_Results_all <- rbind(TS_Results_all, TS_Results_today)
+  TS_Results_parts[[length(TS_Results_parts) + 1L]] <- TS_Results_today
   
   Nodes <- unique(append(Nodes, sub(".*-", "", TS_Results_today[,2])))
   nodes_w_dash <- unique(append(nodes_w_dash, TS_Results_today$Node.Identifier))
@@ -95,6 +100,10 @@ for (lag in initial_lags){
   print(Nodes)
 }
 
+# Join result files once rather than repeatedly copying a growing data frame
+if (length(TS_Results_parts)) {
+  TS_Results_all <- as.data.frame(rbindlist(TS_Results_parts, use.names = TRUE, fill = TRUE))
+}
 TS_Results_today <- TS_Results_all
 
 is_related_icd10 <- function(a, b) {
@@ -211,54 +220,98 @@ if (length(files) != length(yr_list)) {
   )
 }
 
-year_dfs <- lapply(files, function(f) {
-  read_csv(
-    f,
-    col_types = cols(.default = col_character()),
-    show_col_types = FALSE
-  )
-})
+# Load only columns used in the linelist and graphics
+# Keep the CSV character types, original file order and original row order
+raw_cols <- c(
+  "C_Visit_Date_Time", "Hospital", "DischargeDiagnosis", "DischargeDisposition",
+  "HasBeenAdmitted", "ChiefComplaintParsed", "TriageNotesOrig", "Diagnosis_Combo",
+  "Admit_Reason_Code", "C_Unique_Patient_ID", "HospitalName", "Patient_Zip",
+  "Sex", "C_Race", "C_Ethnicity", "ModeOfArrival", "Travel_History",
+  "Age", "Discharge_Date_Time"
+)
+possible_hosp_zip_cols <- c(
+  "HospitalZip", "Hospital_Zip", "HospitalZIP", "Hospital_ZIP",
+  "FacilityZip", "Facility_Zip"
+)
+
+# Read in 4 years of ED visit data without retaining unused CSV columns
+read_year <- function(f) {
+  header <- names(fread(f, nrows = 0L, showProgress = FALSE))
+  missing <- setdiff(raw_cols, header)
+  if (length(missing)) stop("Missing CSV columns in ", f, ": ", paste(missing, collapse = ", "))
+  selected <- header[header %in% c(raw_cols, possible_hosp_zip_cols)]
+
+  # Optional per-year cache for repeated runs when older files are unchanged
+  use_cache <- isTRUE(getOption("nssp.interpretation.cache_years", FALSE))
+  cache_file <- file.path(parent_dir, "data", "cache", "interpretation_years",
+                          paste0(gsub("[^A-Za-z0-9_.-]", "_", basename(f)), ".rds"))
+  fi <- file.info(f)
+  stamp <- list(path = normalizePath(f), size = fi$size,
+                mtime = as.numeric(fi$mtime), selected = selected,
+                backend = getOption("nssp.interpretation.csv_backend", "fread"))
+  if (use_cache && file.exists(cache_file)) {
+    cached <- tryCatch(readRDS(cache_file), error = function(e) NULL)
+    if (is.list(cached) && identical(cached$stamp, stamp)) return(cached$data)
+  }
+
+  # Switch to readr if the parser-equivalence benchmark flags a CSV-format difference
+  backend <- getOption("nssp.interpretation.csv_backend", "fread")
+  if (identical(backend, "readr")) {
+    out <- as.data.table(readr::read_csv(
+      f, col_select = tidyselect::all_of(selected),
+      col_types = readr::cols(.default = readr::col_character()),
+      show_col_types = FALSE, progress = FALSE
+    ))
+  } else if (identical(backend, "fread")) {
+    out <- fread(
+      f, select = selected, colClasses = "character", na.strings = c("", "NA"),
+      showProgress = FALSE, data.table = TRUE
+    )
+  } else {
+    stop("Unknown nssp.interpretation.csv_backend: ", backend)
+  }
+
+  if (use_cache) {
+    dir.create(dirname(cache_file), recursive = TRUE, showWarnings = FALSE)
+    saveRDS(list(stamp = stamp, data = out), cache_file, compress = FALSE)
+  }
+  out
+}
 
 # However you import data; I use import_data_specdates function
-archive_deduped <- rbind(year_dfs[[1]], year_dfs[[2]], year_dfs[[3]], year_dfs[[4]])
-ed1 <- year_dfs[[1]]
-ed1$date <- as.Date(ed1$C_Visit_Date_Time)
-ed1 <- ed1[,c("date","Hospital","DischargeDiagnosis","DischargeDisposition","HasBeenAdmitted")]
-ed2 <- year_dfs[[2]]
-ed2$date <- as.Date(ed2$C_Visit_Date_Time)
-ed2 <- ed2[,c("date","Hospital","DischargeDiagnosis","DischargeDisposition","HasBeenAdmitted")]
-ed3 <- year_dfs[[3]]
-ed3$date <- as.Date(ed3$C_Visit_Date_Time)
-ed3 <- ed3[,c("date","Hospital","DischargeDiagnosis","DischargeDisposition","HasBeenAdmitted")]
-ed4 <- year_dfs[[4]]
-ed4$date <- as.Date(ed4$C_Visit_Date_Time)
-ed4 <- ed4[,c("date","Hospital","DischargeDiagnosis","DischargeDisposition","HasBeenAdmitted")]
+archive_deduped <- as.data.frame(rbindlist(lapply(files, read_year), use.names = TRUE))
 
-ed <- rbind(ed1,ed2,ed3,ed4)
-    
+# Build the weekly trend data from the same rows, without copying four yearly tables
+# The weekly graph only needs dates and dispositions, not the whole ED archive
+ed <- data.frame(date = as.Date(archive_deduped$C_Visit_Date_Time))
 ed$dispo <- "V" #visit
-ed$dispo[ed$DischargeDisposition %in% c("09","9","09A","Adm","ADM","20","_Expired","Expired","22","23","24","25","26","27","28","29","40", "41", "42")] <- "A" #adverse
+ed$dispo[archive_deduped$DischargeDisposition %in% c("09","9","09A","Adm","ADM","20","_Expired","Expired","22","23","24","25","26","27","28","29","40", "41", "42")] <- "A" #adverse
 
-ed$diagnosiscode1 <- gsub("\\.", "", ed$DischargeDiagnosis)
-
-ed <- cbind(MMWRweek::MMWRweek(ed$date), ed)
-
-mmwrwks <- unique(MMWRweek::MMWRweek(unique(ed$date))[, - 3])
+# Calculate MMWR fields for unique dates only, then map back to every visit
+# This gives the same week/day for repeated dates without repeatedly parsing them
+unique_dates <- unique(ed$date)
+mmwr_lookup <- MMWRweek::MMWRweek(unique_dates)
+ed <- cbind(mmwr_lookup[match(ed$date, unique_dates), , drop = FALSE], ed)
+mmwrwks <- unique(mmwr_lookup[, -3, drop = FALSE])
 
 # For maps
-library(sf)
-library(dplyr)
 library(tigris)
-
 options(tigris_use_cache = TRUE)
 
 # National ZCTA shapefile from Census via tigris
 # cb = TRUE gives the lighter generalized file; set cb = FALSE if you want full detail
-modzcta <- tigris::zctas(year = 2020, cb = TRUE, class = "sf")
+# Keep a processed local cache because these national polygons do not change each day
+zcta_cache <- file.path(parent_dir, "data", "cache", "modzcta_2020_cb.rds")
+if (isTRUE(getOption("nssp.interpretation.cache_zcta", TRUE)) && file.exists(zcta_cache)) {
+  modzcta <- readRDS(zcta_cache)
+} else {
+  modzcta <- tigris::zctas(year = 2020, cb = TRUE, class = "sf")
+}
 
 # Keep the downstream join working by creating the same join key name
-modzcta <- modzcta %>%
-  mutate(modzcta = ZCTA5CE20)
+if (!"modzcta" %in% names(modzcta)) {
+  modzcta$modzcta <- modzcta$ZCTA5CE20
+}
 
 # Create the same lookup structure your old code expected:
 # zipcode + MODZCTA20
@@ -294,10 +347,12 @@ archive_deduped$time <- format(
   "%H:%M:%S"
 )
 
-archive_deduped$chiefcomplaint <- normalize_text_utf8(archive_deduped$ChiefComplaintParsed)
-archive_deduped$triagenote <- normalize_text_utf8(archive_deduped$TriageNotesOrig)
-archive_deduped$diagnosistext <- normalize_text_utf8(archive_deduped$Diagnosis_Combo)
-archive_deduped$admitreason <- normalize_text_utf8(archive_deduped$Admit_Reason_Code)
+# Keep the original text until a signal selects the visit
+# This avoids expensive UTF-8 conversion for millions of records never exported
+archive_deduped$chiefcomplaint <- archive_deduped$ChiefComplaintParsed
+archive_deduped$triagenote <- archive_deduped$TriageNotesOrig
+archive_deduped$diagnosistext <- archive_deduped$Diagnosis_Combo
+archive_deduped$admitreason <- archive_deduped$Admit_Reason_Code
 
 archive_deduped$key <- archive_deduped$C_Unique_Patient_ID
 archive_deduped$hospital <- archive_deduped$HospitalName
@@ -345,7 +400,7 @@ archive_deduped$age_group <- as.character(archive_deduped$age_group)
 v2 <- read.csv(paste0(parent_dir, "/data/v2/", final_date, "/lag", lag, ".csv"))
 
 # Common cause (these are for the dummy nodes that link different parts of the tree)
-common_cause <- read.csv(paste0(parent_dir, "/data/Common_cause.csv"))
+common_cause <- cause_file
 common_cause <- common_cause[is.na(common_cause$X4)==F,]
 
 # check if any of the signals are for dummy node and if any, add the different linked nodes to the identifier value separated by "|"
@@ -385,46 +440,77 @@ keep_cols <- c(
 )
 
 # archive_deduped match
-dx_clean_archive <- gsub("\\.", "", archive_deduped$diagnosiscode1)
-
-# v2 match
-code_clean_v2 <- gsub("\\.", "", v2$code)
-
-# ed match
-dx_clean_ed <- gsub("\\.", "", ed$diagnosiscode1)
-
-match_any_fixed <- function(x, codes) {
-  codes <- codes[!is.na(codes) & codes != ""]
-  if (length(codes) == 0) return(rep(FALSE, length(x)))
-  
-  out <- rep(FALSE, length(x))
-  for (code in codes) {
-    out <- out | grepl(code, x, fixed = TRUE)
-  }
-  out
-}
+# The native matcher removes decimal points while scanning; no full archive gsub required
+# For small signal lists, retain the original fixed substring fallback
 
 archive_date <- as.Date(archive_deduped$date)
 v2_date <- as.Date(v2$date)
-
 match_date_archive <- !is.na(archive_date)
 match_date_v2 <- !is.na(v2_date)
-
 window_starts <- as.Date(TS_Results_today$Time.Window.Start)
+
+# Match all ICD signal nodes in one streaming pass instead of scanning the archive per node
+# For short pattern lists, the simple fixed matcher can be faster than building a native index
+nssp_signal_keys <- gsub("\\.", "", as.character(valid_nodes))
+fast_cpp <- getOption(
+  "nssp.interpretation.cpp",
+  file.path(parent_dir, "code", "fast_match.cpp")
+)
+use_native <- length(nssp_signal_keys) >= getOption("nssp.interpretation.min_native_patterns", 8L) &&
+  file.exists(fast_cpp) && requireNamespace("Rcpp", quietly = TRUE)
+if (use_native) {
+  # Compile only if the code has changed; cache compilation across R sessions
+  rcpp_cache <- file.path(parent_dir, "data", "cache", "rcpp_interpretation")
+  dir.create(rcpp_cache, showWarnings = FALSE, recursive = TRUE)
+  Rcpp::sourceCpp(fast_cpp, cacheDir = rcpp_cache, rebuild = FALSE, verbose = FALSE)
+}
+
+nssp_hit_indices <- function(x, patterns) {
+  if (use_native) {
+    # Skip decimal points within the native matcher instead of copying each string
+    return(nssp_fixed_hits(x, patterns, skip_dots = TRUE))
+  }
+  # Exact fixed-substring fallback for a small number of signals
+  x <- gsub("\\.", "", x)
+  lapply(patterns, function(p) {
+    if (is.na(p) || !nzchar(p)) return(integer())
+    which(grepl(p, x, fixed = TRUE))
+  })
+}
+
+# Keep all matching row positions in the original CSV order
+hits_archive <- nssp_hit_indices(archive_deduped$diagnosiscode1, nssp_signal_keys)
+hits_v2 <- nssp_hit_indices(v2$code, nssp_signal_keys)
+# Reuse the archive matches for the ED trend table instead of scanning twice
+hits_ed <- hits_archive
+
+# Normalize archive text lazily unless many signals repeatedly use the same archive rows
+# Choose the lower-work strategy based on how many row selections are required
+text_mode <- getOption("nssp.interpretation.text_mode", "adaptive")
+if (!text_mode %in% c("adaptive", "lazy", "eager")) {
+  stop("nssp.interpretation.text_mode must be adaptive, lazy, or eager")
+}
+signal_row_exposures <- sum(as.double(lengths(hits_archive)))
+nssp_text_pre_normalized <- identical(text_mode, "eager") ||
+  (identical(text_mode, "adaptive") &&
+   signal_row_exposures >= 0.9 * nrow(archive_deduped))
+if (nssp_text_pre_normalized) {
+  # A heavily overlapping signal set benefits from normalizing the archive once
+  archive_deduped$chiefcomplaint <- normalize_text_utf8(archive_deduped$chiefcomplaint)
+  archive_deduped$triagenote <- normalize_text_utf8(archive_deduped$triagenote)
+  archive_deduped$diagnosistext <- normalize_text_utf8(archive_deduped$diagnosistext)
+  archive_deduped$admitreason <- normalize_text_utf8(archive_deduped$admitreason)
+}
+message("Signal text normalization: ", if (nssp_text_pre_normalized) "once for archive" else "on selected signal rows")
+
+admitted_archive <- !is.na(archive_deduped$HasBeenAdmitted) &
+  archive_deduped$HasBeenAdmitted == "1"
+ts_clean_nodes <- if (length(nssp_signal_keys)) clean_node(TS_Results_today$Node.Identifier) else character()
 
 # ------------------------------------------------------------
 # Hospital ZIP lookup for maps
 # Build once outside the signal loop because it is not node-specific
 # ------------------------------------------------------------
-
-possible_hosp_zip_cols <- c(
-  "HospitalZip",
-  "Hospital_Zip",
-  "HospitalZIP",
-  "Hospital_ZIP",
-  "FacilityZip",
-  "Facility_Zip"
-)
 
 hosp_zip_col <- possible_hosp_zip_cols[
   possible_hosp_zip_cols %in% names(archive_deduped)
@@ -471,15 +557,18 @@ hospital_zip_lookup <- hospital_zip_lookup_raw %>%
 # Build once outside the signal loop
 # ------------------------------------------------------------
 
-modzcta_feature_bbox <- do.call(
-  rbind,
-  lapply(sf::st_geometry(modzcta), sf::st_bbox)
-)
-
-modzcta$geom_xmin <- modzcta_feature_bbox[, "xmin"]
-modzcta$geom_ymin <- modzcta_feature_bbox[, "ymin"]
-modzcta$geom_xmax <- modzcta_feature_bbox[, "xmax"]
-modzcta$geom_ymax <- modzcta_feature_bbox[, "ymax"]
+if (!all(c("geom_xmin", "geom_ymin", "geom_xmax", "geom_ymax") %in% names(modzcta))) {
+  # Calculate polygon envelopes once and cache them with the polygons
+  modzcta_feature_bbox <- do.call(rbind, lapply(sf::st_geometry(modzcta), sf::st_bbox))
+  modzcta$geom_xmin <- modzcta_feature_bbox[, "xmin"]
+  modzcta$geom_ymin <- modzcta_feature_bbox[, "ymin"]
+  modzcta$geom_xmax <- modzcta_feature_bbox[, "xmax"]
+  modzcta$geom_ymax <- modzcta_feature_bbox[, "ymax"]
+  if (isTRUE(getOption("nssp.interpretation.cache_zcta", TRUE))) {
+    dir.create(dirname(zcta_cache), showWarnings = FALSE, recursive = TRUE)
+    saveRDS(modzcta, zcta_cache, compress = FALSE)
+  }
+}
 
 SIGNALS <- TS_Results_all[, 2]
 
@@ -505,85 +594,75 @@ ARCHIVE_DEDUPED <- archive_deduped
 
 # For cluster and baseline linelist if you want to determine which are incident vs non-incident, you will also need to use v2 (this is the study dataset where we only kept incident diagnoses)
 # This has "date", "key", "dispo", "code" (in that order)
-for(i in 1:length(valid_nodes))
-{
+# Normalize linelist text only after selecting signal-matching rows
+# Keep the same helper and normalization order as the original script
+normalize_signal_text <- function(dat) {
+  if (nssp_text_pre_normalized || nrow(dat) == 0L) return(dat)
+  dat$chiefcomplaint <- normalize_text_utf8(dat$chiefcomplaint)
+  dat$triagenote <- normalize_text_utf8(dat$triagenote)
+  dat$diagnosistext <- normalize_text_utf8(dat$diagnosistext)
+  dat$admitreason <- normalize_text_utf8(dat$admitreason)
+  dat
+}
+
+# Cache the temporal-results CSV: it is identical for every signal in this run
+temporal_cache <- NULL
+
+for (i in seq_along(valid_nodes)) {
   print(i)
   print(valid_nodes[i])
-  
-  # Recreate archive deduped
-  archive_deduped <- ARCHIVE_DEDUPED
-  
-  if (isTRUE(only_1[i])) {
-    archive_deduped <- archive_deduped[
-      archive_deduped$HasBeenAdmitted == 1,
-      ,
-      drop = FALSE
-    ]
-  }
-  
-  # IMPORTANT: these must be recalculated after archive_deduped is filtered
-  dx_clean_archive <- gsub("\\.", "", archive_deduped$diagnosiscode1)
-  archive_date <- as.Date(archive_deduped$date)
-  match_date_archive <- !is.na(archive_date)
 
-  node_codes <- valid_nodes[i]
-  node_codes <- gsub("\\.", "", node_codes)
+  # Reuse the archive's original row positions; do not copy or rescan the full archive
+  archive_rows <- hits_archive[[i]]
+  if (isTRUE(only_1[i])) {
+    archive_rows <- archive_rows[admitted_archive[archive_rows]]
+  }
+
+  node_codes <- nssp_signal_keys[i]
+  # ts_idx <- which(ts_clean_nodes == node_codes)[1L]
+
+  # Match direct signal first
+  ts_idx <- match(valid_nodes[i], TS_Results_today$node_clean)
   
-  ts_idx <- which(clean_node(TS_Results_today$Node.Identifier) == node_codes)[1]
+  # If not found, match its common-cause parent
+  if (is.na(ts_idx)) {
+    parent <- cause_file$X2[cause_file$X1 %in% valid_nodes[i]]
+    ts_idx <- match(TRUE, TS_Results_today$node_clean %in% parent)
+  }
   
   if (is.na(ts_idx)) {
     message("Skipping node not present in filtered TS_Results_today: ", node_codes)
     next
   }
-  
+
   node_codes_full <- TS_Results_today$Node.Identifier[ts_idx]
-  
   window_start <- as.Date(TS_Results_today$Time.Window.Start[ts_idx])
-  
-  match_dx_archive <- !is.na(dx_clean_archive) &
-    match_any_fixed(dx_clean_archive, node_codes)
-  
-  match_dx_v2 <- !is.na(code_clean_v2) &
-    match_any_fixed(code_clean_v2, node_codes)
-  
-  match_dx_ed <- !is.na(dx_clean_ed) &
-    match_any_fixed(dx_clean_ed, node_codes)
-  
-  match_date_archive <- !is.na(archive_deduped$date)
-  
-  node_codes_clean <- gsub("\\.", "", node_codes)
-  
-  ed_keep <- ed[match_dx_ed, , drop = FALSE]
-  
-  if (nrow(ed_keep) == 0) next
-  
+  node_codes_clean <- node_codes
+
+  ed_keep <- ed[hits_ed[[i]], , drop = FALSE]
+  if (nrow(ed_keep) == 0L) next
   ed_keep$n <- 1
-  
-  
-  temp <- archive_deduped[
-    match_dx_archive & match_date_archive & archive_date >= window_start,
-    keep_cols,
-    drop = FALSE
+
+  # Split cluster and baseline using the precomputed date and code indices
+  good_archive <- archive_rows[match_date_archive[archive_rows]]
+  temp <- ARCHIVE_DEDUPED[
+    good_archive[archive_date[good_archive] >= window_start],
+    keep_cols, drop = FALSE
   ]
-  
-  temp1 <- archive_deduped[
-    match_dx_archive & match_date_archive & archive_date < window_start,
-    keep_cols,
-    drop = FALSE
+  temp1 <- ARCHIVE_DEDUPED[
+    good_archive[archive_date[good_archive] < window_start],
+    keep_cols, drop = FALSE
   ]
-  
-  temp2 <- v2[
-    match_dx_v2 & match_date_v2 & v2_date >= window_start,
-    ,
-    drop = FALSE
-  ]
-  
-  temp21 <- v2[
-    match_dx_v2 & match_date_v2 & v2_date < window_start,
-    ,
-    drop = FALSE
-  ]
-  
+
+  # First normalize only the visits that will enter this signal's workbook
+  temp <- normalize_signal_text(temp)
+  temp1 <- normalize_signal_text(temp1)
+
+  good_v2 <- hits_v2[[i]]
+  good_v2 <- good_v2[match_date_v2[good_v2]]
+  temp2 <- v2[good_v2[v2_date[good_v2] >= window_start], , drop = FALSE]
+  temp21 <- v2[good_v2[v2_date[good_v2] < window_start], , drop = FALSE]
+
   # If baseline has records (i.e., not empty)
   if(nrow(temp1)>0)
   {
@@ -600,7 +679,7 @@ for(i in 1:length(valid_nodes))
       temp <- merge(temp, temp2_small, by = c("date", "key"), all.x = TRUE)
       temp$dxtype[is.na(temp$dxtype)] <- -1
     } else {
-      temp$dxtype <- -1
+      temp$dxtype <- rep(-1L, nrow(temp))
     }
     
     # merge linelist for baseline between original and study dataset to identify incident vs non-incident
@@ -637,7 +716,7 @@ for(i in 1:length(valid_nodes))
     # For multi-year trend lines
     if (nrow(ed_keep) == 0) next
     
-    ed_keep <- cbind(MMWRweek(ed_keep$date)[, -3, drop = FALSE], ed_keep)
+    # MMWR year/week already attached to ed before the signal loop
     ed_keep <- aggregate(n ~ MMWRyear + MMWRweek, data = ed_keep, sum)
     ed_keep <- merge(mmwrwks, ed_keep, all.x = TRUE)
     ed_keep$n[is.na(ed_keep$n)] <- 0
@@ -759,38 +838,19 @@ for(i in 1:length(valid_nodes))
     # Temporal cluster observed/expected bar plot
     # ------------------------------------------------------------
     
-    if (isTRUE(subregion)){
-      temporal <- read.csv(
-        paste0(
-          parent_dir,
-          "/results_subregion/",
-          final_date,
-          "/Results_lag",
-          lag,
-          "_",
-          final_date,
-          ".temporal.csv"
-        ),
-        check.names = FALSE
+    if (is.null(temporal_cache)) {
+      # Load once instead of reading the same temporal file for every signal
+      temporal_file <- file.path(
+        parent_dir,
+        if (isTRUE(subregion)) "results_subregion" else "results",
+        as.character(final_date),
+        paste0("Results_lag", lag, "_", final_date, ".temporal.csv")
       )
-    } else {
-      temporal <- read.csv(
-        paste0(
-          parent_dir,
-          "/results/",
-          final_date,
-          "/Results_lag",
-          lag,
-          "_",
-          final_date,
-          ".temporal.csv"
-        ),
-        check.names = FALSE
-      )
+      temporal_cache <- read.csv(temporal_file, check.names = FALSE)
+      temporal_cache$Node.clean <- sub("^[^-]+-", "", temporal_cache[["Node ID"]])
     }
-    
-    temporal$Node.clean <- sub("^[^-]+-", "", temporal[["Node ID"]])
-    
+    temporal <- temporal_cache
+
     matching_clusters <- unique(
       temporal$Cluster[temporal$Node.clean == valid_nodes[i]]
     )
@@ -891,256 +951,117 @@ for(i in 1:length(valid_nodes))
       
       z <- substr(as.character(dat[[zip_col]]), 1, 5)
       
-      tmp <- data.frame(
-        zipcode = z,
-        stringsAsFactors = FALSE
-      )
-      
-      tmp <- merge(
-        tmp,
-        lookup_df[, c("zipcode", "MODZCTA20")],
-        by = "zipcode",
-        all.x = TRUE
-      )
-      
-      tmp <- tmp[
-        !is.na(tmp$MODZCTA20) &
-          tmp$MODZCTA20 != "",
-        ,
-        drop = FALSE
-      ]
-      
-      if (nrow(tmp) > 0) {
-        out <- as.data.frame(
-          table(tmp$MODZCTA20),
-          stringsAsFactors = FALSE
-        )
-        
+      # ZIP to MODZCTA is one-to-one here; match avoids a repeated data-frame merge
+      # Keep merge semantics if the provided lookup unexpectedly has repeated ZIP keys
+      if (anyDuplicated(lookup_df$zipcode)) {
+        old <- merge(data.frame(zipcode = z), lookup_df[, c("zipcode", "MODZCTA20")],
+                     by = "zipcode", all.x = TRUE)
+        mapped <- old$MODZCTA20
+      } else {
+        mapped <- lookup_df$MODZCTA20[match(z, lookup_df$zipcode)]
+      }
+      mapped <- mapped[!is.na(mapped) & mapped != ""]
+
+      if (length(mapped) > 0L) {
+        out <- as.data.frame(table(mapped), stringsAsFactors = FALSE)
         names(out) <- c("modzcta", "Freq")
         out$pct <- round(out$Freq / sum(out$Freq), 4)
       } else {
         out <- data.frame(
-          modzcta = character(),
-          Freq = integer(),
-          pct = numeric(),
+          modzcta = character(), Freq = integer(), pct = numeric(),
           stringsAsFactors = FALSE
         )
       }
-      
+
       out$modzcta <- as.character(out$modzcta)
       out
     }
-    
-    
+
     # ------------------------------------------------------------
     # Helper: bbox from only MODZCTAs with data
     # ------------------------------------------------------------
     get_data_bbox <- function(count_df, modzcta_sf) {
-      
       data_modzctas <- as.character(count_df$modzcta[!is.na(count_df$pct)])
-      data_modzctas <- data_modzctas[
-        !is.na(data_modzctas) &
-          data_modzctas != ""
-      ]
-      
-      data_area <- modzcta_sf %>%
-        dplyr::filter(modzcta %in% data_modzctas)
-      
-      if (nrow(data_area) == 0) {
-        return(NULL)
-      }
-      
-      sf::st_bbox(data_area)
+      idx <- which(modzcta_sf$modzcta %in% data_modzctas)
+      if (!length(idx)) return(NULL)
+
+      # These feature envelopes were computed once before the signal loop
+      sf::st_bbox(c(
+        xmin = min(modzcta_sf$geom_xmin[idx]),
+        ymin = min(modzcta_sf$geom_ymin[idx]),
+        xmax = max(modzcta_sf$geom_xmax[idx]),
+        ymax = max(modzcta_sf$geom_ymax[idx])
+      ), crs = sf::st_crs(modzcta_sf))
     }
-    
-    
+
     # ------------------------------------------------------------
     # Helper: crop sf object to bbox
     # ------------------------------------------------------------
     crop_to_bbox <- function(sf_obj, bb) {
-      
-      if (is.null(bb)) {
-        return(sf_obj[0, ])
-      }
-      
-      suppressWarnings(
-        sf::st_crop(sf_obj, bb)
-      )
+      if (is.null(bb)) return(sf_obj[0, ])
+      suppressWarnings(sf::st_crop(sf_obj, bb))
     }
-    
-    
+
     # ------------------------------------------------------------
     # Helper: calculate output dimensions matched to bbox
     # This prevents huge blank space in coord_sf maps.
     # ------------------------------------------------------------
     bbox_dims <- function(bb, base_width = 6, min_height = 3, max_height = 8) {
-      
-      if (is.null(bb)) {
-        return(list(width = base_width, height = 5))
-      }
-      
+      if (is.null(bb)) return(list(width = base_width, height = 5))
       x_range <- as.numeric(bb["xmax"] - bb["xmin"])
       y_range <- as.numeric(bb["ymax"] - bb["ymin"])
-      
       if (is.na(x_range) || x_range <= 0) x_range <- 1
       if (is.na(y_range) || y_range <= 0) y_range <- 1
-      
       mid_lat <- mean(c(as.numeric(bb["ymin"]), as.numeric(bb["ymax"])), na.rm = TRUE)
       lon_correction <- cos(mid_lat * pi / 180)
       if (is.na(lon_correction) || lon_correction <= 0) lon_correction <- 1
-      
       height <- base_width * (y_range / (x_range * lon_correction))
       height <- max(min_height, min(max_height, height))
-      
       list(width = base_width, height = height)
     }
-    
-    
+
     # ------------------------------------------------------------
     # Helper: make map
     # Grey background + colored data polygons
     # ------------------------------------------------------------
     make_map <- function(background_sf, data_sf, title_txt, legend_txt, bb_use) {
-      
-      data_sf <- data_sf[
-        !is.na(data_sf$pct),
-        ,
-        drop = FALSE
-      ]
-      
+      data_sf <- data_sf[!is.na(data_sf$pct), , drop = FALSE]
       if (nrow(data_sf) == 0 || is.null(bb_use)) {
-        return(
-          ggplot() +
-            theme_void() +
-            labs(title = paste(title_txt, "- No mapped ZIP data"))
-        )
+        return(ggplot() + theme_void() + labs(title = paste(title_txt, "- No mapped ZIP data")))
       }
-      
       ggplot() +
-        geom_sf(
-          data = background_sf,
-          fill = "grey95",
-          color = "white",
-          size = 0.1
-        ) +
-        geom_sf(
-          data = data_sf,
-          aes(fill = pct),
-          color = "white",
-          size = 0.1
-        ) +
-        scale_fill_viridis_c(
-          option = "plasma",
-          name = legend_txt,
-          labels = label_number(accuracy = 0.001)
-        ) +
+        geom_sf(data = background_sf, fill = "grey95", color = "white", size = 0.1) +
+        geom_sf(data = data_sf, aes(fill = pct), color = "white", size = 0.1) +
+        scale_fill_viridis_c(option = "plasma", name = legend_txt,
+                             labels = label_number(accuracy = 0.001)) +
         coord_sf(
           xlim = c(bb_use["xmin"], bb_use["xmax"]),
           ylim = c(bb_use["ymin"], bb_use["ymax"]),
-          expand = FALSE,
-          clip = "on",
-          lims_method = "geometry_bbox"
+          expand = FALSE, clip = "on", lims_method = "geometry_bbox"
         ) +
         theme_minimal() +
-        theme(
-          plot.margin = margin(2, 2, 2, 2),
-          panel.spacing = unit(0, "pt")
-        ) +
+        theme(plot.margin = margin(2, 2, 2, 2), panel.spacing = unit(0, "pt")) +
         labs(title = title_txt)
     }
-    
-    
-    if ("hospital_zip_map" %in% names(temp)) {
-      temp$hospital_zip_map <- NULL
-    }
-    
-    if ("hospital_zip_map" %in% names(temp1)) {
-      temp1$hospital_zip_map <- NULL
-    }
-    
-    temp <- merge(
-      temp,
-      hospital_zip_lookup,
-      by = "hospital",
-      all.x = TRUE,
-      sort = FALSE
-    )
-    
-    temp1 <- merge(
-      temp1,
-      hospital_zip_lookup,
-      by = "hospital",
-      all.x = TRUE,
-      sort = FALSE
-    )
-    
+
+    if ("hospital_zip_map" %in% names(temp)) temp$hospital_zip_map <- NULL
+    if ("hospital_zip_map" %in% names(temp1)) temp1$hospital_zip_map <- NULL
+
+    temp <- merge(temp, hospital_zip_lookup, by = "hospital", all.x = TRUE, sort = FALSE)
+    temp1 <- merge(temp1, hospital_zip_lookup, by = "hospital", all.x = TRUE, sort = FALSE)
     temp$zipcode <- substr(as.character(temp$zipcode), 1, 5)
     temp1$zipcode <- substr(as.character(temp1$zipcode), 1, 5)
-    
     temp$hospital_zip_map <- substr(as.character(temp$hospital_zip_map), 1, 5)
     temp1$hospital_zip_map <- substr(as.character(temp1$hospital_zip_map), 1, 5)
-    
-    modzcta$modzcta <- as.character(modzcta$modzcta)
-    
-    
+
     # ------------------------------------------------------------
     # Build count tables
     # ------------------------------------------------------------
-    
-    cluster_hosp_counts <- count_modzcta(
-      temp,
-      "hospital_zip_map",
-      df
-    )
-    
-    cluster_patient_counts <- count_modzcta(
-      temp,
-      "zipcode",
-      df
-    )
-    
-    baseline_hosp_counts <- count_modzcta(
-      temp1,
-      "hospital_zip_map",
-      df
-    )
-    
-    baseline_patient_counts <- count_modzcta(
-      temp1,
-      "zipcode",
-      df
-    )
-    
-    
-    # ------------------------------------------------------------
-    # Join counts to MODZCTA geometry
-    # ------------------------------------------------------------
-    
-    map_cluster_hosp <- left_join(
-      modzcta,
-      cluster_hosp_counts,
-      by = "modzcta"
-    )
-    
-    map_cluster_patient <- left_join(
-      modzcta,
-      cluster_patient_counts,
-      by = "modzcta"
-    )
-    
-    map_baseline_hosp <- left_join(
-      modzcta,
-      baseline_hosp_counts,
-      by = "modzcta"
-    )
-    
-    map_baseline_patient <- left_join(
-      modzcta,
-      baseline_patient_counts,
-      by = "modzcta"
-    )
-    
-    
+    cluster_hosp_counts <- count_modzcta(temp, "hospital_zip_map", df)
+    cluster_patient_counts <- count_modzcta(temp, "zipcode", df)
+    baseline_hosp_counts <- count_modzcta(temp1, "hospital_zip_map", df)
+    baseline_patient_counts <- count_modzcta(temp1, "zipcode", df)
+
     # ------------------------------------------------------------
     # Bboxes
     # Hospital cluster map uses hospital cluster data only.
@@ -1148,96 +1069,50 @@ for(i in 1:length(valid_nodes))
     # Hospital baseline map uses hospital baseline data only.
     # Patient baseline map uses same hospital baseline bbox.
     # ------------------------------------------------------------
-    
-    bb_cluster_hosp <- get_data_bbox(
-      cluster_hosp_counts,
-      modzcta
-    )
-    
-    bb_baseline_hosp <- get_data_bbox(
-      baseline_hosp_counts,
-      modzcta
-    )
-    
+    bb_cluster_hosp <- get_data_bbox(cluster_hosp_counts, modzcta)
+    bb_baseline_hosp <- get_data_bbox(baseline_hosp_counts, modzcta)
     cluster_dims <- bbox_dims(bb_cluster_hosp, base_width = 6)
     baseline_dims <- bbox_dims(bb_baseline_hosp, base_width = 6)
-    
+
     crop_to_bbox2 <- function(sf_obj, bb) {
-      
-      if (is.null(bb)) {
-        return(sf_obj[0, ])
-      }
-      
+      if (is.null(bb)) return(sf_obj[0, ])
       sf_obj[
         sf_obj$geom_xmin <= as.numeric(bb["xmax"]) &
           sf_obj$geom_xmax >= as.numeric(bb["xmin"]) &
           sf_obj$geom_ymin <= as.numeric(bb["ymax"]) &
           sf_obj$geom_ymax >= as.numeric(bb["ymin"]),
-        ,
-        drop = FALSE
+        , drop = FALSE
       ]
     }
-    
+
     # ------------------------------------------------------------
     # Crop grey backgrounds and data maps to exact bbox
+    # Join only cropped polygons instead of copying the national sf table four times
     # ------------------------------------------------------------
-    
-    # cluster_background <- crop_to_bbox(modzcta, bb_cluster_hosp)
-    # baseline_background <- crop_to_bbox(modzcta, bb_baseline_hosp)
-    
-    # map_cluster_hosp_cropped <- crop_to_bbox(map_cluster_hosp, bb_cluster_hosp)
-    # map_cluster_patient_cropped <- crop_to_bbox(map_cluster_patient, bb_cluster_hosp)
-    
-    # map_baseline_hosp_cropped <- crop_to_bbox(map_baseline_hosp, bb_baseline_hosp)
-    # map_baseline_patient_cropped <- crop_to_bbox(map_baseline_patient, bb_baseline_hosp)
-    
     cluster_background <- crop_to_bbox2(modzcta, bb_cluster_hosp)
     baseline_background <- crop_to_bbox2(modzcta, bb_baseline_hosp)
-    
-    map_cluster_hosp_cropped <- crop_to_bbox2(map_cluster_hosp, bb_cluster_hosp)
-    map_cluster_patient_cropped <- crop_to_bbox2(map_cluster_patient, bb_cluster_hosp)
-    
-    map_baseline_hosp_cropped <- crop_to_bbox2(map_baseline_hosp, bb_baseline_hosp)
-    map_baseline_patient_cropped <- crop_to_bbox2(map_baseline_patient, bb_baseline_hosp)
-    
-    
+    map_cluster_hosp_cropped <- dplyr::left_join(cluster_background, cluster_hosp_counts, by = "modzcta")
+    map_cluster_patient_cropped <- dplyr::left_join(cluster_background, cluster_patient_counts, by = "modzcta")
+    map_baseline_hosp_cropped <- dplyr::left_join(baseline_background, baseline_hosp_counts, by = "modzcta")
+    map_baseline_patient_cropped <- dplyr::left_join(baseline_background, baseline_patient_counts, by = "modzcta")
+
     # ------------------------------------------------------------
     # Create 4 plot objects
     # These are used later in the Excel Maps section.
     # ------------------------------------------------------------
-    
-    p_hosp_cluster <- make_map(
-      cluster_background,
-      map_cluster_hosp_cropped,
-      paste("Hospital ZIP Map for", node_codes, "- Cluster"),
-      "Hospital Cluster",
-      bb_cluster_hosp
-    )
-    
-    p_patient_cluster <- make_map(
-      cluster_background,
-      map_cluster_patient_cropped,
-      paste("Patient ZIP Map for", node_codes, "- Cluster"),
-      "Patient Cluster",
-      bb_cluster_hosp
-    )
-    
-    p_hosp_baseline <- make_map(
-      baseline_background,
-      map_baseline_hosp_cropped,
-      paste("Hospital ZIP Map for", node_codes, "- Baseline"),
-      "Hospital Baseline",
-      bb_baseline_hosp
-    )
-    
-    p_patient_baseline <- make_map(
-      baseline_background,
-      map_baseline_patient_cropped,
-      paste("Patient ZIP Map for", node_codes, "- Baseline"),
-      "Patient Baseline",
-      bb_baseline_hosp
-    )
-    
+    p_hosp_cluster <- make_map(cluster_background, map_cluster_hosp_cropped,
+                               paste("Hospital ZIP Map for", node_codes, "- Cluster"),
+                               "Hospital Cluster", bb_cluster_hosp)
+    p_patient_cluster <- make_map(cluster_background, map_cluster_patient_cropped,
+                                  paste("Patient ZIP Map for", node_codes, "- Cluster"),
+                                  "Patient Cluster", bb_cluster_hosp)
+    p_hosp_baseline <- make_map(baseline_background, map_baseline_hosp_cropped,
+                                paste("Hospital ZIP Map for", node_codes, "- Baseline"),
+                                "Hospital Baseline", bb_baseline_hosp)
+    p_patient_baseline <- make_map(baseline_background, map_baseline_patient_cropped,
+                                   paste("Patient ZIP Map for", node_codes, "- Baseline"),
+                                   "Patient Baseline", bb_baseline_hosp)
+
     # Other co-diagnoses codes - creating frequency tables for cluster and baseline
     process <- function(x) {
       if (is.na(x) || x == "") return(character(0))
@@ -1246,31 +1121,7 @@ for(i in 1:length(valid_nodes))
       tokens <- tokens[tokens != ""]
       unique(substr(tokens, 1, 3))
     }
-    
-    temp3 <- temp1[temp1$dxtype != -1, "diagnosiscode1", drop = TRUE]
-    if (length(temp3) == 0) temp3 <- temp1[, "diagnosiscode1", drop = TRUE]
-    temp3 <- temp3[!is.na(temp3) & temp3 != ""]
-    
-    if (length(temp3) > 0) {
-      result <- data.frame(
-        dx = vapply(temp3, function(x) paste(process(x), collapse = " "), character(1)),
-        stringsAsFactors = FALSE
-      )
-      
-      dx_tokens <- unlist(strsplit(result$dx, " "))
-      dx_tokens <- trimws(dx_tokens)
-      dx_tokens <- dx_tokens[dx_tokens != ""]
-      
-      if (length(dx_tokens) > 0) {
-        temp3b <- as.data.frame(table(dx_tokens), stringsAsFactors = FALSE)
-        names(temp3b) <- c("dx", "Freq")
-      } else {
-        temp3b <- data.frame(dx = character(), Freq = integer(), stringsAsFactors = FALSE)
-      }
-    } else {
-      temp3b <- data.frame(dx = character(), Freq = integer(), stringsAsFactors = FALSE)
-    }
-    
+
     temp3 <- temp1[temp1$dxtype != -1, "diagnosiscode1", drop = TRUE]
     if (length(temp3) == 0) temp3 <- temp1[, "diagnosiscode1", drop = TRUE]
     temp3 <- temp3[!is.na(temp3) & temp3 != ""]
@@ -1418,45 +1269,6 @@ for(i in 1:length(valid_nodes))
     
     # Helper: build chief complaint word table safely
     build_cc_table <- function(vals, freq_name, pct_name) {
-      vals <- vals[!is.na(vals) & trimws(vals) != ""]
-      
-      if (length(vals) == 0) {
-        out <- data.frame(
-          CC_word = character(),
-          stringsAsFactors = FALSE
-        )
-        out[[freq_name]] <- integer()
-        out[[pct_name]] <- numeric()
-        return(out)
-      }
-      
-      words <- toupper(unlist(lapply(
-        strsplit(gsub("[[:punct:]]", " ", vals), " "),
-        unique
-      )))
-      
-      words <- trimws(words)
-      words <- words[!is.na(words) & words != ""]
-      words <- words[!words %in% stop_words]
-      words <- words[nchar(words) >= 2]
-      
-      if (length(words) == 0) {
-        out <- data.frame(
-          CC_word = character(),
-          stringsAsFactors = FALSE
-        )
-        out[[freq_name]] <- integer()
-        out[[pct_name]] <- numeric()
-        return(out)
-      }
-      
-      out <- as.data.frame(table(words), stringsAsFactors = FALSE)
-      names(out) <- c("CC_word", freq_name)
-      out[[pct_name]] <- round((out[[freq_name]] * 100) / length(vals), 1)
-      out
-    }
-    
-    build_cc_table <- function(vals, freq_name, pct_name) {
       vals <- vals[!is.na(vals)]
       vals <- normalize_for_tokens(vals)
       vals <- vals[trimws(vals) != ""]
@@ -1592,15 +1404,6 @@ for(i in 1:length(valid_nodes))
     
     # List of demographic variables
     demographics <- c("sex", "age_group", "ethnicity", "race", "zip3_collapsed")
-    
-    # Set sparse ZIPs to 'Other'
-    zip_counts <- table(combined$zip3)
-    keep_zip3 <- names(zip_counts[zip_counts >= 10])
-    
-    combined$zip3_collapsed <- as.character(combined$zip3)
-    combined$zip3_collapsed[is.na(combined$zip3_collapsed) | combined$zip3_collapsed == ""] <- "Unknown"
-    combined$zip3_collapsed[!combined$zip3_collapsed %in% keep_zip3 & combined$zip3_collapsed != "Unknown"] <- "Other"
-    combined$zip3_collapsed <- factor(combined$zip3_collapsed)
     
     # Set sparse ZIPs to 'Other'
     zip_counts <- table(combined$zip3)
@@ -2050,286 +1853,4 @@ for(i in 1:length(valid_nodes))
     }
   }  
   
-  # If baseline is empty
-  if(nrow(temp1)==0)
-  {
-    next
-    # Merging original and study dataset to identify incident vs. non-incident
-    if(nrow(temp2)>0)
-    {
-      temp2$dxtype=0
-      temp2$dxtype[which(temp2$dispo=="A")]=1
-      temp2=temp2[,-3]
-      temp$date=as.Date(temp$date)
-      temp2$date=as.Date(temp2$date)
-      temp=merge(temp,temp2,by=c("date","key"),all.x=TRUE)
-      temp=temp[,c(ncol(temp),1:(ncol(temp)-1))]
-      temp$dxtype[is.na(temp$dxtype)==T]=-1
-    }
-    
-    if(nrow(temp21)>0)
-    {
-      temp21$dxtype=0
-      temp21$dxtype[which(temp21$dispo=="A")]=1
-      temp21=temp21[,-3]
-      temp1$date=as.Date(temp1$date)
-      temp21$date=as.Date(temp21$date)
-      temp1=merge(temp1,temp21,by=c("date","key"),all.x=TRUE)
-      temp1=temp1[,c(ncol(temp1),1:(ncol(temp1)-1))]
-      temp1$dxtype[is.na(temp1$dxtype)==T]=-1
-    }
-    
-    # if 1- then only keep Adverse visits
-    if(grepl("1\\-",node_codes)==T)
-    {temp=temp[which(temp$dispo=="A"),]
-    temp1=temp1[which(temp1$dispo=="A"),]
-    ed_keep=ed_keep[which(ed_keep$dispo=="A"),]}
-    
-    # order by date and time
-    temp$time=format(strptime(temp$time, "%H:%M"), "%H:%M")
-    temp=temp[order(temp$date,temp$time),]
-    
-    # order by date and time
-    temp1$time=format(strptime(temp1$time, "%H:%M"), "%H:%M")
-    temp1=temp1[order(temp1$date,temp1$time),]
-    
-    #For multi-year trend lines
-    ed_keep=cbind(MMWRweek(ed_keep$date)[,-3],ed_keep)
-    ed_keep=aggregate(n~MMWRyear+MMWRweek,data=ed_keep,sum)
-    ed_keep=merge(mmwrwks,ed_keep,all.x=TRUE)
-    ed_keep$n[is.na(ed_keep$n)==T]=0
-    ed_keep=ed_keep[ed_keep$MMWRyear %in% yr_list,]
-    ed_keep=ed_keep[order(ed_keep$MMWRyear,ed_keep$MMWRweek),]
-    rownames(ed_keep) <- seq_len(nrow(ed_keep))
-    
-    # Multi-year Weekly count graph
-    # check is it an outlier trend for max signals
-    complete_week=ifelse(weekdays(END_DATE)=="Saturday",ed_keep$MMWRweek[nrow(ed_keep)],ed_keep$MMWRweek[nrow(ed_keep)-1])
-    
-    hlm_weeks=which(ed_keep$MMWRweek[-c((nrow(ed_keep)-1):nrow(ed_keep))]==complete_week)
-    hlm_weeks=c(hlm_weeks-1,hlm_weeks,hlm_weeks+1)
-    hlm_weeks=hlm_weeks[hlm_weeks>=1]
-    
-    hlm_data=ed_keep[hlm_weeks,]
-    hlm_data=hlm_data[order(hlm_data$MMWRyear,hlm_data$MMWRweek),]
-    
-    if(ed_keep$n[ed_keep$MMWRyear==max(ed_keep$MMWRyear) & ed_keep$MMWRweek==complete_week]>mean(hlm_data$n)+2*sd(hlm_data$n))
-    {sigs_maxout <- c(sigs_maxout, as.character(node_codes))}
-    
-    code_trend <- tempfile(fileext = ".png")
-    png(code_trend, width = 1000, height = 600, res = 150)
-    par(mar = c(6, 4, 1, 2))  # Adjust bottom margin for label space
-    
-    plot(1:52,rep(0,52),type="n",xlim=c(1,52),ylim=c(0,ceiling(max(ed_keep$n)*1.1)),xlab="CDC_Week",ylab=gsub("2\\-","",paste(node_codes)),xaxt="n")
-    axis(1,at=seq(1,52,2),labels=seq(1,52,2),cex.axis=0.6,las=2)
-    
-    # Trends where last point we note if partial or full week
-    if(weekdays(END_DATE)=="Saturday")
-    {for(k in 1:length(unique(ed_keep$MMWRyear)))
-    {lines(ed_keep$MMWRweek[which(ed_keep$MMWRyear==unique(ed_keep$MMWRyear)[k])],ed_keep$n[which(ed_keep$MMWRyear==unique(ed_keep$MMWRyear)[k])],col=c("Blue","Green","Purple","Red")[k],lwd=c(1,1,1,3)[k])}
-      legend("topleft",lty=1,col=c("Blue","Green","Purple","Red"),legend=unique(ed_keep$MMWRyear),bty="n",ncol=4)}
-    
-    if(weekdays(END_DATE)%in% c("Wednesday", "Thursday", "Friday"))
-    {for(k in 1:length(unique(ed_keep$MMWRyear)))
-    {lines(ed_keep$MMWRweek[which(ed_keep$MMWRyear==unique(ed_keep$MMWRyear)[k])],ed_keep$n[which(ed_keep$MMWRyear==unique(ed_keep$MMWRyear)[k])],col=c("Blue","Green","Purple","Red")[k],lwd=c(1,1,1,3)[k])}
-      if(k==length(unique(ed_keep$MMWRyear))) 
-      { lastpt=length(ed_keep$MMWRweek[which(ed_keep$MMWRyear==unique(ed_keep$MMWRyear)[k])])
-      points(ed_keep$MMWRweek[which(ed_keep$MMWRyear==unique(ed_keep$MMWRyear)[k])][lastpt],ed_keep$n[which(ed_keep$MMWRyear==unique(ed_keep$MMWRyear)[k])][lastpt], pch = 21, bg = NA, col = "red", cex = 1, lwd = 1)
-      legend("topleft",lty=1,col=c("Blue","Green","Purple","Red"),legend=unique(ed_keep$MMWRyear),bty="n",ncol=4)}
-      lg=legend("topright",pch=21,col="Red",legend="partial week",cex=0.5,bty="n",plot=FALSE)
-      legend(x = lg$rect$left, y = lg$rect$top*0.85,  # adjust 0.05 as needed
-             pch = 21, col = "red", legend = "partial week", 
-             cex = 0.5, bty = "n")}
-    
-    if(weekdays(END_DATE) %in% c("Sunday","Monday","Tuesday"))
-    {ed_keep1=ed_keep[-length(ed_keep$MMWRyear),]
-    for(k in 1:length(unique(ed_keep1$MMWRyear)))
-    {lines(ed_keep1$MMWRweek[which(ed_keep1$MMWRyear==unique(ed_keep1$MMWRyear)[k])],ed_keep1$n[which(ed_keep1$MMWRyear==unique(ed_keep1$MMWRyear)[k])],col=c("Blue","Green","Purple","Red")[k],lwd=c(1,1,1,3)[k])}
-    legend("topleft",lty=1,col=c("Blue","Green","Purple","Red"),legend=unique(ed_keep1$MMWRyear),bty="n",ncol=4)}
-    dev.off()
-    
-    # Map for Cluster
-    temp$zipcode=substr(temp$zipcode,1,5)
-    temp_z=merge(temp,df[,c("zipcode","MODZCTA20")],by="zipcode",all.x=TRUE)
-    temp_z=data.frame(table(temp_z$MODZCTA20))
-    temp_z$pct=round(temp_z$Freq/sum(temp_z$Freq),4)
-    names(temp_z)[1]="modzcta"
-    
-    modzcta1 <- left_join(modzcta, temp_z, by = "modzcta")
-    modzcta_plot <- modzcta1[!is.na(modzcta1$pct), ]
-    
-    if (nrow(modzcta_plot) > 0) {
-      bb <- sf::st_bbox(modzcta_plot)
-      
-      p <- ggplot(modzcta1) +
-        geom_sf(aes(fill = pct), color = "white", size = 0.1) +
-        scale_fill_viridis_c(
-          option = "plasma",
-          name = "Cluster",
-          labels = label_number(accuracy = 0.001),
-          na.value = "grey95"
-        ) +
-        coord_sf(
-          xlim = c(bb["xmin"], bb["xmax"]),
-          ylim = c(bb["ymin"], bb["ymax"]),
-          expand = FALSE
-        ) +
-        theme_minimal() +
-        labs(title = paste("MODZCTA Choropleth Map for", node_codes, "cluster"))
-    } else {
-      p <- ggplot(modzcta1) +
-        geom_sf(aes(fill = pct), color = "white", size = 0.1) +
-        scale_fill_viridis_c(
-          option = "plasma",
-          name = "Cluster",
-          labels = label_number(accuracy = 0.001),
-          na.value = "grey95"
-        ) +
-        theme_minimal() +
-        labs(title = paste("MODZCTA Choropleth Map for", node_codes, "cluster"))
-    }
-    
-    # Other co-diagnosis codes for cluster
-    process <- function(x) {
-      tokens <- unlist(strsplit(x, " "))
-      tokens <- tokens[tokens != ""]  # remove empty strings
-      unique_subs <- unique(substr(tokens, 1, 3))
-      paste(unique_subs, collapse = " ")
-    }
-    
-    temp3=gsub("\\|","",temp[which(temp$dxtype!=-1),"diagnosiscode1"])
-    result <- data.frame(dx = sapply(temp3, process))
-    temp3c=data.frame(table(dx=unlist(strsplit(result[,1], " "))))
-    temp3c$dx=gsub("\\s+","",temp3c$dx)
-    temp3c=merge(temp3c,icd10.2026_treefilew_FINAL[,c("Name1","Desc")],by.x="dx",by.y="Name1",all.x=T)
-    temp3c=temp3c[order(-temp3c$Freq),]
-    names(temp3c)[1:2]=c("Level4","ClusterFreq")
-    temp3c$ClusterPct=round((temp3c$ClusterFreq*100)/length(temp3),1)
-    
-    # Top cc words for cluster
-    temp4=as.data.frame(table(toupper(unlist(lapply(strsplit(gsub(x=temp$chiefcomplaint[which(temp$dxtype!=-1)],pattern="[[:punct:]]",replacement=" "),split=" "),unique)))))
-    temp4=temp4[!temp4$Var1 %in% c("","THE","A","AN","OF","AND","TO","IN","FOR","WITH","ON","IS","WAS","ARE","BY","AT","FROM","MY","HIS","HER","HE","SHE","AS","PER","I","HAS","HAVE","PT","PATIENT","STATES"),]
-    temp4=temp4[nchar(as.character(temp4$Var1))>=2,]
-    names(temp4)=c("CC_word","ClusterFreq")
-    temp4$ClusterPct=round((temp4$ClusterFreq*100)/length(temp$chiefcomplaint[which(temp$dxtype!=-1)]),1)
-    
-    temp_words=temp4
-    temp_words=temp_words[order(-temp_words$ClusterFreq),]
-    
-    # Demographic tables
-    temp_d=temp[which(temp$dxtype!=-1),c("sex","age_group", "race","ethnicity","zipcode")]
-    temp_d$group <- "Cluster"
-    combined=rbind(temp_d)
-    age_levels <- c("<1","1-4", "5-12", "13-17", "18-49", "50-64", "65-79", "80+")
-    combined$age_group<- factor(combined$age_group, levels = age_levels)
-    combined$sex=toupper(combined$sex)
-    combined$boro="Outside"
-    combined$boro[grepl("\\b100|10128",combined$zipcode)]="Manhattan"
-    combined$boro[grepl("\\b112",combined$zipcode)]="Brooklyn"
-    combined$boro[grepl("\\b104",combined$zipcode)]="Bronx"
-    combined$boro[grepl("\\b113|\\b114|\\b116|\\b111|\\b110",combined$zipcode)]="Queens"
-    combined$boro[grepl("\\b103",combined$zipcode)]="StatenIs"
-    ref_boro=ifelse(length(combined$boro[grepl("Manhattan",combined$boro)==T])>=1,"Manhattan",intersect(c("Brooklyn","Bronx","Queens","StatenIs"),unique(combined$boro))[1])
-    combined$boro=relevel(factor(combined$boro),ref=ref_boro)
-    combined1=combined[which(combined$race!="MISSUNK"),]
-    combined1=combined1[which(combined1$ethnicity!="MISSUNK"),]
-    # List of demographic variables
-    demographics <- c("sex","age_group","ethnicity", "race","boro")
-    
-    # Initialize results list
-    results <- list()
-    
-    for (var in demographics) {
-      # Create contingency table
-      tab <- table(combined1[[var]])
-      
-      # Calculate proportions by group
-      prop <- round(prop.table(table(combined[[var]])) * 100,2)  # Column-wise percentages
-      
-      # Convert to data frame
-      combined_prop <- as.data.frame(prop)
-      combined_prop$Variable <- combined_prop$Var1
-      rownames(combined_prop) <- NULL
-      
-      combined_prop$Demographic <- var
-      combined_prop$Cluster <- combined_prop$Freq
-      # Reorder columns
-      combined_prop <- combined_prop[, c("Demographic","Variable", "Cluster")]
-      
-      # Append to results
-      results[[var]] <- combined_prop
-    }
-    
-    # Combine all results
-    demog_table <- do.call(rbind, results)
-    
-    demog_table=demog_table[!demog_table$Variable %in% c("M","NOT HISPANIC OR LATINO"),]
-    rownames(demog_table) <- NULL
-    demog_table=demog_table[,c("Demographic","Variable","Cluster")]
-    names(demog_table)=c("Demographic","Variable","ClusterPercent")
-    
-    # Hospital Graph for cluster percent
-    hosp_c=data.frame(table(temp$hospital[which(temp$dxtype!=-1)])/nrow(temp[which(temp$dxtype!=-1),]))
-    names(hosp_c)=c("hospital","ClusterPct")
-    hosp_cb=hosp_c
-    hosp_cb$ClusterPct[is.na(hosp_cb$ClusterPct)==T]=0
-    hosp_cb=hosp_cb[order(-hosp_cb$ClusterPct),]
-    hosp_cb$hospital=gsub("HOSPITAL","HOSP",hosp_cb$hospital)
-    hosp_cb$hospital=gsub("MEDICAL","MED",hosp_cb$hospital)
-    hosp_cb$hospital=gsub("CENTER","CTR",hosp_cb$hospital)
-    hospital_barplot <- tempfile(fileext = ".png")
-    
-    # Increase margins to fit long labels
-    png(hospital_barplot, width = 1000, height = 600, res = 150)
-    par(mar = c(10, 4, 4, 2))  # Adjust bottom margin for label space
-    
-    barplot(hosp_cb$ClusterPct*100,ylab="%",names.arg=hosp_cb$hospital,las=2,cex.names=0.35,main="Percent of ED visits by hospital for cluster",cex.main=0.8)
-    dev.off()
-    
-    install.packages("openxlsx")
-    library("openxlsx")
-    
-    # Create excel with tab sheets
-    wb <- createWorkbook()
-    
-    # Add data frames to sheets
-    temp$NYCres=ifelse(substr(temp$zipcode,1,5) %in% df$zipcode,"Y","N")
-    temp1$NYCres=ifelse(substr(temp1$zipcode,1,5) %in% df$zipcode,"Y","N")
-    
-    addWorksheet(wb, "ClusterLinelist")
-    writeData(wb, "ClusterLinelist", temp[,c(1:6,ncol(temp),7:16,18:(ncol(temp)-1))])
-    
-    addWorksheet(wb, "BaselineLinelist")
-    writeData(wb, "BaselineLinelist", temp1[,c(1:6,ncol(temp1),7:16,18:(ncol(temp1)-1))])
-    
-    addWorksheet(wb, "Other_Codes")
-    writeData(wb, "Other_Codes", temp3c[,c("Level4","Desc","ClusterFreq", "ClusterPct")], startRow = 1, startCol = 1)
-    
-    addWorksheet(wb, "TopCC_words")
-    writeData(wb, "TopCC_words", temp_words)
-    
-    # Weekly trends
-    addWorksheet(wb, "Trends")
-    insertImage(wb, sheet = "Trends", file = code_trend, startRow = 1, startCol = 1, width = 10, height = 6)
-    
-    addWorksheet(wb, "Maps")
-    # Insert image into worksheet
-    insertImage(wb, sheet = "Maps", file = ggsave("map.jpg", plot = p, width = 6, height = 5, dpi = 300), 
-                startRow = 1, startCol = 1, width = 6, height = 5, units = "in")
-    
-    # Hospitals
-    addWorksheet(wb, "Hospitals")
-    insertImage(wb, sheet = "Hospitals", file = hospital_barplot, startRow = 1, startCol = 1, width = 10, height = 6)
-    
-    # demog table
-    addWorksheet(wb, "Demographics")
-    writeData(wb, "Demographics", demog_table)
-    
-    writeData(wb, "Demographics", "Missing and unknown race and ethnicity categories are excluded from chi-squared tests", startRow = nrow(demog_table) + 3, startCol = 1)
-    
-    # Save workbook; provide folder path
-    saveWorkbook(wb, paste0(Folderpath,"/Linelist_",gsub("\\|", "_",gsub("2\\-","",node_codes)),".xlsx"), overwrite = TRUE)
-  }    
-  
 }
-

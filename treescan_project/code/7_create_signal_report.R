@@ -41,14 +41,71 @@ if (isTRUE(subregion)){
 }
 
 if (length(unique(valid_nodes)) > 0) {
-  
+
+  # Common cause: dummy nodes that link different parts of the tree
+  common_cause <- read.csv(paste0(parent_dir, "/data/Common_cause.csv"))
+  common_cause <- common_cause[is.na(common_cause$X4) == FALSE, ]
+
+  # -----------------------------
+  # 2) Only pull prior 7 days
+  # -----------------------------
+  lookback_dates <- seq(as.Date(final_date) - 7, as.Date(final_date) - 1, by = "day")
+  lookback_str <- format(lookback_dates, "%Y-%m-%d")
+
+  if (isTRUE(subregion)) {
+    results_dir <- file.path(parent_dir, "signal_report_subregion")
+  } else {
+    results_dir <- file.path(parent_dir, "signal_report")
+  }
+
+  date_pattern <- paste(lookback_dates, collapse = "|")
+  old_reports <- list.files(
+    path = results_dir,
+    pattern = paste0("^Signals_Report_(", date_pattern, ")\\.xlsx$"),
+    full.names = TRUE,
+    ignore.case = TRUE
+  )
+  old_reports <- old_reports[file.exists(old_reports)]
+  old_reports <- old_reports[order(old_reports, decreasing = TRUE)]
+
+  # -----------------------------
+  # 3) Merge prior days safely
+  # -----------------------------
+  # Prepare each previous report once instead of reading it once for every lag
+  old_report_tables <- lapply(old_reports, function(file) {
+    temp <- tryCatch(
+      as.data.frame(readxl::read_excel(file)),
+      error = function(e) NULL
+    )
+    if (is.null(temp) || nrow(temp) == 0) {
+      stop("File could not be read or has no rows")
+    }
+    temp <- temp[!is.na(temp$Recurrence.Interval), , drop = FALSE]
+    temp$Node.Identifier <- stringi::stri_replace_all_fixed(
+      as.character(temp$Node.Identifier), "\xa0", ""
+    )
+    temp$Node.Identifier <- trimws(temp$Node.Identifier)
+    if ("Node.Name" %in% names(temp)) {
+      dummy_idx_old <- grepl("\\|", temp$Node.Identifier)
+      temp$Node.Identifier[dummy_idx_old] <- temp$Node.Name[dummy_idx_old]
+      temp$Node.Identifier <- trimws(temp$Node.Identifier)
+    }
+    keep_cols <- c("Node.Identifier", "Time.Window.End", "Recurrence.Interval", "Odds.Ratio")
+    temp <- temp[, keep_cols[keep_cols %in% names(temp)], drop = FALSE]
+    file_dt <- sub(".*?(\\d{4}-\\d{2}-\\d{2}).*", "\\1", file)
+    names(temp)[names(temp) == "Recurrence.Interval"] <- paste0("RI_", format(as.Date(file_dt), "%Y%m%d"))
+    names(temp)[names(temp) == "Odds.Ratio"] <- paste0("RR_", format(as.Date(file_dt), "%Y%m%d"))
+    temp <- temp[, c(
+      "Node.Identifier",
+      paste0("RI_", format(as.Date(file_dt), "%Y%m%d")),
+      paste0("RR_", format(as.Date(file_dt), "%Y%m%d"))
+    ), drop = FALSE]
+    temp[!duplicated(temp$Node.Identifier), , drop = FALSE]
+  })
+
   # Loop over lags
   for (lag in initial_lags) {
     print(paste0("We are now assessing lag ", lag))
-    
-    # Common cause: dummy nodes that link different parts of the tree
-    common_cause <- read.csv(paste0(parent_dir, "/data/Common_cause.csv"))
-    common_cause <- common_cause[is.na(common_cause$X4) == FALSE, ]
     
     # Get required nodes
     if (!isTRUE(subregion)){
@@ -117,73 +174,12 @@ if (length(unique(valid_nodes)) > 0) {
     # -----------------------------
     # 2) Only pull prior 7 days
     # -----------------------------
-    lookback_dates <- seq(as.Date(final_date) - 7, as.Date(final_date) - 1, by = "day")
-    lookback_str <- format(lookback_dates, "%Y-%m-%d")
-    
-    if (isTRUE(subregion)){
-      results_dir <- file.path(parent_dir, "signal_report_subregion")
-    } else {
-      results_dir <- file.path(parent_dir, "signal_report")
-    }
-    
-    date_pattern <- paste(lookback_dates, collapse = "|")
-    
-    old_reports <- list.files(
-      path = results_dir,
-      pattern = paste0("^Signals_Report_(", date_pattern, ")\\.xlsx$"),
-      full.names = TRUE,
-      ignore.case = TRUE
-    )
-    
-    old_reports <- old_reports[file.exists(old_reports)]
-    old_reports <- old_reports[order(old_reports, decreasing = TRUE)]
+    # Read the historical reports once, then reuse the prepared columns for every lag
     
     # -----------------------------
     # 3) Merge prior days safely
     # -----------------------------
-    for (file in old_reports) {
-      temp <- tryCatch(
-        as.data.frame(readxl::read_excel(file)),
-        error = function(e) NULL
-      )
-      
-      if (is.null(temp) || nrow(temp) == 0) {
-        stop("File could not be read or has no rows")
-      }
-      
-      temp <- temp[!is.na(temp$Recurrence.Interval), , drop = FALSE]
-      
-      temp$Node.Identifier <- stringi::stri_replace_all_fixed(
-        as.character(temp$Node.Identifier),
-        "\xa0",
-        ""
-      )
-      temp$Node.Identifier <- trimws(temp$Node.Identifier)
-      
-      if ("Node.Name" %in% names(temp)) {
-        dummy_idx_old <- grepl("\\|", temp$Node.Identifier)
-        temp$Node.Identifier[dummy_idx_old] <- temp$Node.Name[dummy_idx_old]
-        temp$Node.Identifier <- trimws(temp$Node.Identifier)
-      }
-      
-      # temp <- temp[temp$Node.Identifier %in% TS_Results_today$Node.Identifier, , drop = FALSE]
-      
-      keep_cols <- c("Node.Identifier", "Time.Window.End", "Recurrence.Interval", "Odds.Ratio")
-      temp <- temp[, keep_cols[keep_cols %in% names(temp)], drop = FALSE]
-      
-      file_dt <- sub(".*?(\\d{4}-\\d{2}-\\d{2}).*", "\\1", file)
-      
-      names(temp)[names(temp) == "Recurrence.Interval"] <- paste0("RI_", format(as.Date(file_dt), "%Y%m%d"))
-      names(temp)[names(temp) == "Odds.Ratio"] <- paste0("RR_", format(as.Date(file_dt), "%Y%m%d"))
-      
-      temp <- temp[, c(
-        "Node.Identifier",
-        paste0("RI_", format(as.Date(file_dt), "%Y%m%d")),
-        paste0("RR_", format(as.Date(file_dt), "%Y%m%d"))
-      ), drop = FALSE]
-      
-      temp <- temp[!duplicated(temp$Node.Identifier), , drop = FALSE]
-      
+    for (temp in old_report_tables) {
       TS_Results_today <- merge(
         TS_Results_today,
         temp,
@@ -571,46 +567,140 @@ if (length(unique(valid_nodes)) > 0) {
   dir.create(plot_dir, recursive = TRUE, showWarnings = FALSE)
   
   # Pull out ICD-like codes from the whole column once
-  all_codes <- regmatches(
-    DFW$DischargeDiagnosisUpdates,
-    gregexpr("\\b[A-Z][0-9]{2}(?:\\.[0-9A-Z]+)?\\b", DFW$DischargeDiagnosisUpdates)
-  )
-  
-  code_counts <- data.table(code = unlist(all_codes))[, .N, by = code][order(-N)]
-  code_counts <- sum(code_counts$N)
-  
+  # Avoid the full long code table and the repeated per-node scans of DFW
+  code_pattern <- "\\b[A-Z][0-9]{2}(?:\\.[0-9A-Z]+)?\\b"
+  plot_delay_idx <- match(node_codes, delay_by_code$code)
+  plot_delay_idx[is.na(node_codes)] <- NA_integer_
+  active_codes <- unique(node_codes[!is.na(plot_delay_idx)])
+  count_backend <- getOption("nssp.signal.count_backend", "native")
+  native_ready <- FALSE
+
+  if (identical(count_backend, "native") && length(active_codes)) {
+    cpp_file <- file.path(parent_dir, "code", "7_optimizer.cpp")
+    if (file.exists(cpp_file) && requireNamespace("Rcpp", quietly = TRUE)) {
+      tryCatch({
+        Rcpp::sourceCpp(cpp_file, rebuild = FALSE, showOutput = FALSE, verbose = FALSE)
+        native_ready <- TRUE
+      }, error = function(e) {
+        warning("Native signal matcher unavailable; using original R counts: ", conditionMessage(e))
+      })
+    } else {
+      warning("7_optimizer.cpp not found or Rcpp unavailable; using original R counts")
+    }
+  }
+
+  # Match the exact original boundary and fallback patterns
+  count_reference <- function(values, codes, fallback = FALSE) {
+    vapply(codes, function(code) {
+      escaped <- stringr::str_escape(code)
+      pattern <- if (fallback) paste0(";", escaped) else
+        paste0("(?<![A-Z0-9.])", escaped, "(?![A-Z0-9.])")
+      sum(stringr::str_count(values, pattern), na.rm = TRUE)
+    }, numeric(1), USE.NAMES = FALSE)
+  }
+
+  # Verify native results on an evenly spaced sample before processing all rows
+  # Empty or non-ASCII signal patterns should use stringr's original regex semantics
+  if (native_ready && (any(!nzchar(active_codes)) ||
+                       any(!stringi::stri_enc_isascii(active_codes), na.rm = TRUE))) {
+    warning("Nonstandard signal codes found; using original R regex counts")
+    native_ready <- FALSE
+  }
+
+  if (native_ready && isTRUE(getOption("nssp.signal.verify_native", TRUE))) {
+    ns <- length(DFW$DischargeDiagnosisUpdates)
+    test_rows <- if (ns) unique(as.integer(seq(1, ns, length.out = min(ns, 2048L)))) else integer()
+    sample_updates <- DFW$DischargeDiagnosisUpdates[test_rows]
+    fast_test <- nssp_signal_counts_cpp(sample_updates, active_codes, mode = 0L)
+    base_test <- count_reference(sample_updates, active_codes)
+    if (!isTRUE(all.equal(as.numeric(fast_test), as.numeric(base_test), tolerance = 0))) {
+      warning("Native boundary check disagrees with original R; using original counts")
+      native_ready <- FALSE
+    }
+  }
+
+  if (native_ready) {
+    node_count_values <- nssp_signal_counts_cpp(DFW$DischargeDiagnosisUpdates, active_codes, mode = 0L)
+  } else {
+    node_count_values <- count_reference(DFW$DischargeDiagnosisUpdates, active_codes)
+  }
+
+  # If the updates contain no matches, use the original semicolon search
+  missing_counts <- which(node_count_values == 0)
+  if (length(missing_counts)) {
+    missing_codes <- active_codes[missing_counts]
+    fallback_ready <- native_ready
+    if (fallback_ready && isTRUE(getOption("nssp.signal.verify_native", TRUE))) {
+      ns <- length(DFW$DischargeDiagnosis)
+      test_rows <- if (ns) unique(as.integer(seq(1, ns, length.out = min(ns, 2048L)))) else integer()
+      f_test <- nssp_signal_counts_cpp(DFW$DischargeDiagnosis[test_rows], missing_codes, mode = 1L)
+      r_test <- count_reference(DFW$DischargeDiagnosis[test_rows], missing_codes, fallback = TRUE)
+      if (!isTRUE(all.equal(as.numeric(f_test), as.numeric(r_test), tolerance = 0))) {
+        warning("Native fallback check disagrees with original R; using original fallback")
+        fallback_ready <- FALSE
+      }
+    }
+    node_count_values[missing_counts] <- if (fallback_ready) {
+      nssp_signal_counts_cpp(DFW$DischargeDiagnosis, missing_codes, mode = 1L)
+    } else {
+      count_reference(DFW$DischargeDiagnosis, missing_codes, fallback = TRUE)
+    }
+  }
+
+  names(node_count_values) <- active_codes
+
+  # Total number of ICD-like code matches across all update records
+  # The native ASCII implementation is checked against the original regex
+  denominator_native <- native_ready &&
+    !any(!stringi::stri_enc_isascii(active_codes), na.rm = TRUE) &&
+    !any(!stringi::stri_enc_isascii(DFW$DischargeDiagnosisUpdates), na.rm = TRUE)
+
+  if (denominator_native && isTRUE(getOption("nssp.signal.verify_native", TRUE))) {
+    ns <- length(DFW$DischargeDiagnosisUpdates)
+    test_rows <- if (ns) unique(as.integer(seq(1, ns, length.out = min(ns, 2048L)))) else integer()
+    sample_updates <- DFW$DischargeDiagnosisUpdates[test_rows]
+    base_test <- sum(lengths(regmatches(sample_updates, gregexpr(code_pattern, sample_updates))))
+    fast_test <- nssp_total_icd_cpp(sample_updates)
+    if (!isTRUE(all.equal(as.numeric(fast_test), as.numeric(base_test), tolerance = 0))) {
+      warning("Native total count disagrees with original R; using original regex")
+      denominator_native <- FALSE
+    }
+  }
+
+  if (denominator_native) {
+    code_counts <- nssp_total_icd_cpp(DFW$DischargeDiagnosisUpdates)
+  } else {
+    all_codes <- regmatches(
+      DFW$DischargeDiagnosisUpdates,
+      gregexpr(code_pattern, DFW$DischargeDiagnosisUpdates)
+    )
+    code_counts <- sum(lengths(all_codes))
+    rm(all_codes)
+  }
+
   if (is.na(code_counts) || code_counts <= 0) {
     warning("code_counts is zero/NA; proportion plots may be skipped.")
   }
-  
+
+  # Interpolate the pooled curve once rather than once for each signal
+  x_days_grid <- seq(0, 5, by = 0.01)
+  pooled_y_grid <- NULL
+
   for (k in seq_along(node_codes)) {
     print(k)
-    
+
     i <- node_codes[k]
     node_label <- node_identifiers[k]
-    
-    which_row <- which(delay_by_code$code == i)
-    if (length(which_row) == 0) next
-    
-    # If duplicate matches exist, use first one
-    which_row <- which_row[1]
-    
+
+    which_row <- plot_delay_idx[k]
+    if (is.na(which_row)) next
+
     xvals <- as.numeric(delay_by_code[which_row, 2:101])
     if (all(is.na(xvals))) next
-    
-    i_esc <- stringr::str_escape(i)
-    
-    num1 <- DFW[, count := str_count(
-      DischargeDiagnosisUpdates,
-      regex(paste0("(?<![A-Z0-9.])", i_esc, "(?![A-Z0-9.])"))
-    )]
-    
-    num <- sum(num1$count, na.rm = TRUE)
-    
-    if (num == 0) {
-      num <- sum(str_count(DFW$DischargeDiagnosis, paste0(";", i_esc)), na.rm = TRUE)
-    }
-    
+
+    # Use the native code counts without adding a count column to DFW
+    num <- unname(node_count_values[i])
+
     # Build lookup from actual xvals
     x_lookup <- xvals / 24
     y_lookup <- seq_along(xvals)
@@ -637,7 +727,7 @@ if (length(unique(valid_nodes)) > 0) {
     }
     
     result <- tryCatch(
-      get_y_for_x(seq(0, 5, by = 0.01)),
+      get_y_for_x(x_days_grid),
       error = function(e) {
         message("Skipping ", i, ": ", conditionMessage(e))
         return(NULL)
@@ -647,9 +737,11 @@ if (length(unique(valid_nodes)) > 0) {
     if (is.null(result)) next
     if (is.na(code_counts) || code_counts <= 0) next
     
-    y1 <- get_y_for_x(seq(0, 5, by = 0.01))
-    y2 <- get_y_for_x2(seq(0, 5, by = 0.01))
-    frac <- 100 * (num * y1) / (code_counts * y2)
+    y1 <- result
+    if (is.null(pooled_y_grid)) {
+      pooled_y_grid <- get_y_for_x2(x_days_grid)
+    }
+    frac <- 100 * (num * y1) / (code_counts * pooled_y_grid)
     
     # Guard against bad frac values that would make ylim fail
     if (all(is.na(frac)) || all(!is.finite(frac))) {

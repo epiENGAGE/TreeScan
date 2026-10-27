@@ -20,7 +20,7 @@ server <- FALSE
 
 # Do you want to run on a subregion of your jurisdiction?
 # e.g., TX_Tarrant in Texas?
-subregion <- FALSE
+subregion <- TRUE
 
 # If subregion = TRUE, then what subregion? (this has TX_Travis as default)
 which_subregion <- c("TX_Travis")
@@ -51,7 +51,7 @@ final_date <- Sys.Date()
 
 # Do you need to refresh your password?
 # Maybe you updated or changed it recently 
-password_refresh <- TRUE
+password_refresh <- FALSE
 
 # Is it a new month?
 # If so then set to true.
