@@ -36,7 +36,7 @@ https://www.treescan.org/download_treescan.html
   * **Windows** → if running locally
   * **Linux** → if running on a server
 * Select the **NON-graphical version**
-  * The standard (graphical) version may cause IT/access issues
+  * The standard (graphical) version may cause access issues
 
 <hr style="border: 2px solid #333; width: 50%;" />
 
