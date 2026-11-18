@@ -1,15 +1,4 @@
-# TreeScan step 10: export ONE standalone HTML snapshot to open via double-click.
-# Reads only saved step-6/7 workbooks and the current dashboard helper functions.
-# Does not launch Shiny, start a server, or alter scripts 1-9.
-#
-# In RStudio, from treescan_project:
-# final_date <- as.Date("2026-11-13")
-# subregion <- TRUE
-# source("code/10_export_offline_html.R")
-#
-# Note: This file deliberately contains all exported visit records, including
-# identifiers. Treat its output as sensitive surveillance data.
-
+# Export offline dashboard
 export_treescan_offline_html <- function(project_dir, final_date,
                                         subregion = TRUE, output_file = NULL) {
   project_dir <- normalizePath(project_dir, winslash = "/", mustWork = TRUE)

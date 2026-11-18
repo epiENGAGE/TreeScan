@@ -1,6 +1,4 @@
-# TreeScan step 9. Uses ONLY final_date from the running pipeline.
-# If subregion exists, it changes the default collection; it is NOT required.
-# Does not need parent_dir, TreeScan objects, or anything held by steps 1-8.
+# Prepare the dashboard
 local({
   if(!exists("final_date",envir=.GlobalEnv,inherits=FALSE))
     stop("Set final_date <- as.Date('2026-11-13') (lowercase d) first.",call.=FALSE)

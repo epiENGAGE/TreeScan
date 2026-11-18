@@ -210,7 +210,7 @@ ui <- shiny::fluidPage(
     shiny::fluidRow(
       shiny::column(7,shiny::div(class="eyebrow","Public health  /  surveillance analytics"),
         shiny::div(class="hero-title","TreeScan Signal Review"),
-        shiny::div(class="hero-sub","Start with the daily report. Investigate a signal, or combine signals to study shared diagnoses, encounters and trends.")),
+        shiny::div(class="hero-sub","Dashboard for analysis TreeScan signals.")),
       shiny::column(5,shiny::div(class="hero-controls",
         shiny::selectInput("scope","Collection",choices=c("Subregion"="subregion","Full jurisdiction"="full"),selected=preferred_scope),
         shiny::selectInput("analysis_date","Analysis date",choices=if(length(ts_dates(initial_catalog))) ts_dates(initial_catalog) else c("No saved dates"="none"),selected=initial_date)

@@ -1,5 +1,4 @@
-# TreeScan dashboard launcher -- no TreeScan pipeline variables required.
-# Use: source('code/9_launch_dashboard.R') from the treescan_project folder.
+# TreeScan dashboard launcher
 local({
   if (!requireNamespace("shiny",quietly=TRUE)) stop("Install shiny: install.packages('shiny')")
   sourced <- unlist(lapply(sys.frames(),function(x) {

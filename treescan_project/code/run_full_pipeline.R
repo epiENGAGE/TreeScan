@@ -30,7 +30,7 @@ which_subregion <- c("TX_Travis")
 # select number below; 0 means use all available (which was the previous default)
 # Let's set as a default half of your available processors
 install.packages("parallel")
-number_processors <- parallel::detectCores() / 2
+number_processors <- parallel::detectCores() / 4
 
 # Are you going to set this for batch or be more hands on?
 # There are two options for lag selection for this pipeline
@@ -171,6 +171,7 @@ source(paste0(parent_dir, "/code/2.4_data_artifact_check.R"))
 
 # Create the count file
 source(paste0(parent_dir, "/code/3_create_count_file.R"))
+setwd(parent_dir)
 
 # Update the parameter file
 source(paste0(parent_dir, "/code/4_update_parameter_file.R"))
@@ -190,4 +191,13 @@ source(paste0(parent_dir, "/code/6_create_signal_linelist.R"))
 source(paste0(parent_dir, "/code/7_create_signal_report.R"))
 
 # Now Run WC review code
-source(paste0(parent_dir, "/code/8_WC_signal_review.R"))
+# source(paste0(parent_dir, "/code/8_WC_signal_review.R"))
+
+# Prepare Shiny Dashboard
+source(paste0(parent_dir, "/code/9_prepare_dashboard.R"))
+
+# Generate Offline HTML Dashboard
+source(file.path(parent_dir, "code", "10_export_offline_html.R"))
+
+# Open the dashboard
+source("code/9_launch_dashboard.R")
