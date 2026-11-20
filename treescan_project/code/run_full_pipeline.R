@@ -200,4 +200,4 @@ source(paste0(parent_dir, "/code/9_prepare_dashboard.R"))
 source(file.path(parent_dir, "code", "10_export_offline_html.R"))
 
 # Open the dashboard
-source("code/9_launch_dashboard.R")
+# source("code/9_launch_dashboard.R")
